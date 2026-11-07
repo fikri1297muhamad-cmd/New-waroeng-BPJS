@@ -188,22 +188,13 @@ useEffect(() => {
   }
 
   if (showStaffLogin) {
-    return <StaffLogin onLogin={handleStaffLogin} />;
-  }
+  return <StaffLogin onLogin={handleStaffLogin} />;
+}
 
-      setCart([]);
-      setShowConfirmation(false);
-      setSuccessCode(result.order_code);
-    } catch (err) {
-      console.error(err);
-      setOrderError(
-        'Pesanan belum berhasil disimpan. Silakan coba kembali.'
-      );
-      setShowConfirmation(false);
-    } finally {
-      setSending(false);
-    }
-  };
+return (
+  <main className="min-h-screen bg-amber-50 pb-80">
+return (
+  <main className="min-h-screen bg-amber-50 pb-80">
 
   return (
     <main className="min-h-screen bg-amber-50 pb-80">
