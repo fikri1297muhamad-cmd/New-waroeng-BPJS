@@ -150,7 +150,19 @@ useEffect(() => {
         items: orderItems,
         total_amount: total
       });
-
+      setCart([]);
+      setShowConfirmation(false);
+      setSuccessCode(result.order_code);
+    } catch (err) {
+      console.error(err);
+      setOrderError(
+        'Pesanan belum berhasil disimpan. Silakan coba kembali.'
+      );
+      setShowConfirmation(false);
+    } finally {
+      setSending(false);
+    }
+  };
   if (staffRole) {
     return (
       <div>
