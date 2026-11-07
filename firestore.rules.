@@ -1,0 +1,55 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/staff_profiles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/staff_profiles/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isStaff() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/staff_profiles/$(request.auth.uid))
+        && get(/databases/$(database)/documents/staff_profiles/$(request.auth.uid)).data.role in ['admin', 'kasir'];
+    }
+
+    match /menu_items/{menuId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /restaurant_tables/{tableId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /staff_profiles/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isStaff();
+
+      // Pembuatan pesanan akan diaktifkan
+      // setelah backend tepercaya disiapkan.
+      allow create: if false;
+
+      allow update: if isStaff()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'payment_status'])
+        && request.resource.data.status
+          in ['menunggu', 'diproses', 'siap', 'selesai', 'dibatalkan']
+        && request.resource.data.payment_status
+          in ['belum_lunas', 'lunas'];
+
+      allow delete: if isAdmin();
+    }
+  }
+}
