@@ -151,6 +151,34 @@ useEffect(() => {
         total_amount: total
       });
 
+  if (staffRole) {
+    return (
+      <div>
+        <div className="flex items-center justify-between bg-green-900 p-4 text-white">
+          <div>
+            <p className="font-bold">{staffName}</p>
+            <p className="text-sm">
+              {staffRole === 'admin' ? 'Administrator' : 'Kasir'}
+            </p>
+          </div>
+
+          <button
+            onClick={handleStaffLogout}
+            className="rounded-lg bg-white px-4 py-2 font-bold text-green-900"
+          >
+            Keluar
+          </button>
+        </div>
+
+        {staffRole === 'admin' ? <AdminView /> : <KasirView />}
+      </div>
+    );
+  }
+
+  if (showStaffLogin) {
+    return <StaffLogin onLogin={handleStaffLogin} />;
+  }
+
       setCart([]);
       setShowConfirmation(false);
       setSuccessCode(result.order_code);
