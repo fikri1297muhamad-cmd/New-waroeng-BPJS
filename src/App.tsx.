@@ -1,159 +1,154 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from './firebase';
+import { listenToMenus } from './services/firestore';
+import type { MenuItem } from './types';
 
-type MenuItem = {
-id: string;
-name: string;
-category: string;
-price: number;
-image_url?: string;
-description?: string;
-is_available: boolean;
-};
-
-const categories = ['semua', 'makanan', 'minuman', 'cemilan'];
+const categories = [
+  { id: 'semua', label: 'Semua' },
+  { id: 'makanan', label: 'Makanan' },
+  { id: 'minuman', label: 'Minuman' },
+  { id: 'cemilan', label: 'Cemilan' }
+];
 
 const formatRupiah = (price: number) =>
-new Intl.NumberFormat('id-ID', {
-style: 'currency',
-currency: 'IDR',
-maximumFractionDigits: 0
-}).format(price);
+  new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    maximumFractionDigits: 0
+  }).format(price);
 
 export default function App() {
-const [menus, setMenus] = useState<MenuItem[]>([]);
-const [category, setCategory] = useState('semua');
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState('');
+  const [menus, setMenus] = useState<MenuItem[]>([]);
+  const [category, setCategory] = useState('semua');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-useEffect(() => {
-const unsubscribe = onSnapshot(
-collection(db, 'menu_items'),
-(snapshot) => {
-const data = snapshot.docs.map((doc) => ({
-id: doc.id,
-...doc.data()
-})) as MenuItem[];
+  useEffect(() => {
+    const unsubscribe = listenToMenus(
+      (data) => {
+        setMenus(data);
+        setLoading(false);
+        setError('');
+      },
+      (err) => {
+        console.error(err);
+        setError('Gagal menghubungkan menu ke Firebase.');
+        setLoading(false);
+      }
+    );
 
-    setMenus(data.filter((item) => item.is_available !== false));
-    setLoading(false);
-    setError('');
-  },
-  (err) => {
-    console.error(err);
-    setError('Belum dapat membaca menu. Periksa koneksi dan aturan keamanan Firebase.');
-    setLoading(false);
-  }
-);
+    return () => unsubscribe();
+  }, []);
 
-return () => unsubscribe();
+  const filteredMenus = menus.filter((item) => {
+    if (category === 'semua') return true;
 
-}, []);
+    if (category === 'cemilan') {
+      return item.category === 'cemilan';
+    }
 
-const filteredMenus = menus.filter((item) => {
-if (category === 'semua') return true;
-if (category === 'cemilan') {
-return item.category === 'cemilan' || item.category === 'camilan';
-}
-return item.category === category;
-});
+    return item.category === category;
+  });
 
-return (
-<main className="min-h-screen bg-amber-50 pb-10">
-<header className="bg-green-800 px-5 py-7 text-white">
-<div className="mx-auto max-w-5xl">
-<div className="text-3xl font-extrabold tracking-wide">
-WAROENG BPJS
-</div>
-<p className="mt-2 text-sm text-green-100">
-Nikmat & Pas di Kantong
-</p>
-<p className="mt-4 text-sm leading-relaxed text-green-100">
-Jl. Kandangsapi 001/002 No. 01, Desa Tanjungsari,
-Kecamatan Sukaluyu, Kabupaten Cianjur
-</p>
-</div>
-</header>
+  return (
+    <main className="min-h-screen bg-amber-50 pb-10">
+      <header className="bg-green-800 px-5 py-7 text-white">
+        <div className="mx-auto max-w-5xl">
+          <h1 className="text-3xl font-extrabold">
+            WAROENG BPJS
+          </h1>
 
-  <section className="mx-auto max-w-5xl px-4 py-6">
-    <h1 className="mb-4 text-xl font-bold text-gray-800">
-      Pilihan Menu
-    </h1>
+          <p className="mt-2 text-sm text-green-100">
+            Nikmat & Pas di Kantong
+          </p>
 
-    <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
-      {categories.map((item) => (
-        <button
-          key={item}
-          onClick={() => setCategory(item)}
-          className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold capitalize ${
-            category === item
-              ? 'bg-green-800 text-white'
-              : 'bg-white text-gray-700'
-          }`}
-        >
-          {item}
-        </button>
-      ))}
-    </div>
+          <p className="mt-4 text-sm leading-relaxed text-green-100">
+            Jl. Kandangsapi 001/002 No. 01,
+            Desa Tanjungsari, Kecamatan Sukaluyu,
+            Kabupaten Cianjur
+          </p>
+        </div>
+      </header>
 
-    {loading && (
-      <p className="py-10 text-center text-gray-600">
-        Menghubungkan menu...
-      </p>
-    )}
+      <section className="mx-auto max-w-5xl px-4 py-6">
+        <h2 className="mb-4 text-xl font-bold">
+          Pilihan Menu
+        </h2>
 
-    {error && (
-      <div className="rounded-xl bg-red-100 p-4 text-sm text-red-800">
-        {error}
-      </div>
-    )}
+        <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
+          {categories.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setCategory(item.id)}
+              className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold ${
+                category === item.id
+                  ? 'bg-green-800 text-white'
+                  : 'bg-white text-gray-700'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
 
-    {!loading && !error && filteredMenus.length === 0 && (
-      <div className="rounded-xl bg-white p-8 text-center text-gray-600">
-        Menu belum tersedia. Silakan tunggu Admin menambahkan produk.
-      </div>
-    )}
+        {loading && (
+          <p className="py-10 text-center">
+            Menghubungkan menu...
+          </p>
+        )}
 
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {filteredMenus.map((item) => (
-        <article
-          key={item.id}
-          className="overflow-hidden rounded-2xl bg-white shadow-sm"
-        >
-          {item.image_url ? (
-            <img
-              src={item.image_url}
-              alt={item.name}
-              className="h-44 w-full object-cover"
-            />
-          ) : (
-            <div className="flex h-44 items-center justify-center bg-green-50 text-5xl">
-              🍽️
-            </div>
-          )}
-
-          <div className="p-4">
-            <h2 className="font-bold text-gray-800">{item.name}</h2>
-            {item.description && (
-              <p className="mt-1 text-sm text-gray-500">
-                {item.description}
-              </p>
-            )}
-            <p className="mt-3 font-bold text-green-800">
-              {formatRupiah(Number(item.price) || 0)}
-            </p>
+        {error && (
+          <div className="rounded-xl bg-red-100 p-4 text-red-800">
+            {error}
           </div>
-        </article>
-      ))}
-    </div>
+        )}
 
-    <p className="mt-8 text-center text-xs text-gray-500">
-      Pemesanan dan pembayaran akan dilakukan sesuai petunjuk di website.
-      Pembayaran dilakukan langsung di kasir.
-    </p>
-  </section>
-</main>
+        {!loading && !error && filteredMenus.length === 0 && (
+          <div className="rounded-xl bg-white p-8 text-center text-gray-600">
+            Menu belum tersedia.
+          </div>
+        )}
 
-);
-                         }
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredMenus.map((item) => (
+            <article
+              key={item.id}
+              className="overflow-hidden rounded-2xl bg-white shadow-sm"
+            >
+              {item.image_url ? (
+                <img
+                  src={item.image_url}
+                  alt={item.name}
+                  className="h-44 w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-44 items-center justify-center bg-green-50 text-5xl">
+                  🍽️
+                </div>
+              )}
+
+              <div className="p-4">
+                <h3 className="font-bold text-gray-800">
+                  {item.name}
+                </h3>
+
+                {item.description && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    {item.description}
+                  </p>
+                )}
+
+                <p className="mt-3 font-bold text-green-800">
+                  {formatRupiah(Number(item.price) || 0)}
+                </p>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <p className="mt-8 text-center text-xs text-gray-500">
+          Pembayaran dilakukan langsung di kasir.
+        </p>
+      </section>
+    </main>
+  );
+}
