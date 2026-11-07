@@ -55,10 +55,10 @@ async function recordFailedAttempt(db: FirebaseFirestore.Firestore, userId: stri
     const locked = count >= MAX_ATTEMPTS;
 
     transaction.set(ref, {
-      count,
-      windowStartedAt: now,
-      lockedUntil: locked ? now + WINDOW_MS : 0
-    });
+  count,
+  windowStartedAt,
+  lockedUntil: locked ? now + WINDOW_MS : 0
+});
 
     return locked;
   });
