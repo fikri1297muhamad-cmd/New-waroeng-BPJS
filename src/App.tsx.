@@ -186,14 +186,9 @@ useEffect(() => {
     );
   }
 
-  if (showStaffLogin) {
-  return <StaffLogin onLogin={handleStaffLogin} />;
-}
-
-return (
-  <main className="min-h-screen bg-amber-50 pb-80">
-return (
-  <main className="min-h-screen bg-amber-50 pb-80">
+    if (showStaffLogin) {
+    return <StaffLogin onLogin={handleStaffLogin} />;
+  }
 
   return (
     <main className="min-h-screen bg-amber-50 pb-80">
@@ -202,17 +197,17 @@ return (
           <h1 className="text-3xl font-extrabold">
             WAROENG BPJS
           </h1>
+
           <p className="mt-2 text-sm text-green-100">
             Nikmat & Pas di Kantong
           </p>
+
           <p className="mt-4 text-sm leading-relaxed text-green-100">
             Jl. Kandangsapi 001/002 No. 01,
             Desa Tanjungsari, Kecamatan Sukaluyu,
             Kabupaten Cianjur
           </p>
-        </div>
-      
-          
+
           <button
             onClick={() => setShowStaffLogin(true)}
             className="mt-4 rounded-lg bg-white px-4 py-2 font-bold text-green-900"
