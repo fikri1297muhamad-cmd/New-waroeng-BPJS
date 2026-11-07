@@ -46,19 +46,7 @@ const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
 const [staffName, setStaffName] = useState('');
 const [showStaffLogin, setShowStaffLogin] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = listenToMenus(
-      (data) => {
-        setMenus(data);
-        setLoading(false);
-        setError('');
-      },
-      (err) => {
-        console.error(err);
-        setError('Gagal menghubungkan menu ke Firebase.');
-        setLoading(false);
-      }
-    );
+  
 const handleStaffLogin = (name: string, role: StaffRole) => {
   setStaffName(name);
   setStaffRole(role);
@@ -71,34 +59,23 @@ const handleStaffLogout = async () => {
   setStaffName('');
 };
 
-if (staffRole) {
-  return (
-    <div>
-      <div className="flex items-center justify-between bg-green-900 p-4 text-white">
-        <div>
-          <p className="font-bold">{staffName}</p>
-          <p className="text-sm">
-            {staffRole === 'admin' ? 'Administrator' : 'Kasir'}
-          </p>
-        </div>
-        <button
-          onClick={handleStaffLogout}
-          className="rounded-lg bg-white px-4 py-2 font-bold text-green-900"
-        >
-          Keluar
-        </button>
-      </div>
-
-      {staffRole === 'admin' ? <AdminView /> : <KasirView />}
-    </div>
+useEffect(() => {
+  const unsubscribe = listenToMenus(
+    (data) => {
+      setMenus(data);
+      setLoading(false);
+      setError('');
+    },
+    (err) => {
+      console.error(err);
+      setError('Gagal menghubungkan menu ke Firebase.');
+      setLoading(false);
+    }
   );
-}
 
-if (showStaffLogin) {
-  return <StaffLogin onLogin={handleStaffLogin} />;
-}
-    return () => unsubscribe();
-  }, []);
+  return () => unsubscribe();
+}, []);
+
 
   const addToCart = (menu: MenuItem) => {
     setCart((current) => {
@@ -204,12 +181,16 @@ if (showStaffLogin) {
             Kabupaten Cianjur
           </p>
         </div>
-      </header<button
-  onClick={() => setShowStaffLogin(true)}
-  className="mt-4 rounded-lg bg-white px-4 py-2 font-bold text-green-900"
->
-  Login Admin / Kasir
-</button>>
+      
+          <button
+            onClick={() => setShowStaffLogin(true)}
+            className="mt-4 rounded-lg bg-white px-4 py-2 font-bold text-green-900"
+          >
+            Login Admin / Kasir
+          </button>
+        </div>
+      </header>
+
 
       <section className="mx-auto max-w-5xl px-4 py-6">
         <h2 className="mb-4 text-xl font-bold">
