@@ -46,11 +46,19 @@ async function recordFailedAttempt(db: FirebaseFirestore.Firestore, userId: stri
       return true;
     }
 
-    const windowStartedAt = data?.windowStartedAt || now;
-    const oldCount = now - windowStartedAt > WINDOW_MS
-      ? 0
-      : (data?.count || 0);
+    const previousWindowStartedAt = data?.windowStartedAt || 0;
 
+const expired =
+  !previousWindowStartedAt ||
+  now - previousWindowStartedAt > WINDOW_MS;
+
+const windowStartedAt = expired
+  ? now
+  : previousWindowStartedAt;
+
+const oldCount = expired
+  ? 0
+  : (data?.count || 0);
     const count = oldCount + 1;
     const locked = count >= MAX_ATTEMPTS;
 
