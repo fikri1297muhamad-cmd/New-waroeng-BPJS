@@ -1,0 +1,122 @@
+
+import { useState } from 'react';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../firebase';
+import type { StaffRole } from '../types';
+
+type Props = {
+  onLogin: (name: string, role: StaffRole) => void;
+};
+
+export default function StaffLogin({ onLogin }: Props) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      setError('Email dan password wajib diisi.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const credential = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
+
+      const profileRef = doc(
+        db,
+        'staff_profiles',
+        credential.user.uid
+      );
+
+      const profileSnapshot = await getDoc(profileRef);
+
+      if (!profileSnapshot.exists()) {
+        await signOut(auth);
+        throw new Error('Profil staf belum terdaftar.');
+      }
+
+      const profile = profileSnapshot.data();
+      const role = profile.role;
+
+      if (role !== 'admin' && role !== 'kasir') {
+        await signOut(auth);
+        throw new Error('Jabatan akun tidak valid.');
+      }
+
+      onLogin(
+        profile.full_name || email.trim(),
+        role as StaffRole
+      );
+    } catch (err) {
+      console.error(err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Login gagal. Periksa email dan password.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-amber-50 p-4">
+      <section className="w-full max-w-md rounded-2xl bg-white p-6 shadow-lg">
+        <h1 className="text-2xl font-extrabold text-green-800">
+          WAROENG BPJS
+        </h1>
+
+        <p className="mt-2 text-gray-500">
+          Login khusus Admin dan Kasir
+        </p>
+
+        <label className="mb-2 mt-6 block text-sm font-semibold">
+          Email
+        </label>
+
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Masukkan email"
+          className="w-full rounded-xl border p-3"
+        />
+
+        <label className="mb-2 mt-4 block text-sm font-semibold">
+          Password
+        </label>
+
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Masukkan password"
+          className="w-full rounded-xl border p-3"
+        />
+
+        {error && (
+          <p className="mt-3 rounded-lg bg-red-100 p-3 text-sm text-red-800">
+            {error}
+          </p>
+        )}
+
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className="mt-5 w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:opacity-50"
+        >
+          {loading ? 'Memeriksa akun...' : 'Masuk'}
+        </button>
+      </section>
+    </main>
+  );
+}
