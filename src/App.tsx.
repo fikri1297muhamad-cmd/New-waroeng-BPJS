@@ -42,16 +42,15 @@ export default function App() {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [sending, setSending] = useState(false);
   const [successCode, setSuccessCode] = useState('');
-const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
-const [staffName, setStaffName] = useState('');
-const [showStaffLogin, setShowStaffLogin] = useState(false);
+  const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
+  const [staffName, setStaffName] = useState('');
+  const [showStaffLogin, setShowStaffLogin] = useState(false);
 
-  
-const handleStaffLogin = (name: string, role: StaffRole) => {
-  setStaffName(name);
-  setStaffRole(role);
-  setShowStaffLogin(false);
-};
+  const handleStaffLogin = (name: string, role: StaffRole) => {
+    setStaffName(name);
+    setStaffRole(role);
+    setShowStaffLogin(false);
+  };
 
 const handleStaffLogout = async () => {
   await signOut(auth);
