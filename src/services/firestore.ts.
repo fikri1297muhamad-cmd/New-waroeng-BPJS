@@ -2,10 +2,11 @@ import {
   collection,
   onSnapshot,
   query,
-  orderBy,
-  addDoc,
-  serverTimestamp
+  orderBy
 } from 'firebase/firestore';
+
+import { db } from '../firebase';
+import type { MenuItem } from '../types';
 
 import { db } from '../firebase';
 import type { MenuItem } from '../types';
