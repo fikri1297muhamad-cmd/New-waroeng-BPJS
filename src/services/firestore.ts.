@@ -33,6 +33,7 @@ export function listenToMenus(
   );
 }
 
+
 export async function createOrder(data: {
   customer_name: string;
   table_number: number;
@@ -64,4 +65,5 @@ export async function createOrder(data: {
     id: result.id,
     order_code: orderCode
   };
-        }
+}
+
