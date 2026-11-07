@@ -33,7 +33,6 @@ export function listenToMenus(
   );
 }
 
-
 export async function createOrder(data: {
   customer_name: string;
   table_number: number;
@@ -46,24 +45,31 @@ export async function createOrder(data: {
   }[];
   total_amount: number;
 }) {
-  const orderCode = `BPJS-${Date.now().toString().slice(-8)}`;
+  const response = await fetch('/api/create-order', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      customer_name: data.customer_name,
+      table_number: data.table_number,
+      items: data.items.map(item => ({
+        menuId: item.menu_id,
+        quantity: item.quantity
+      }))
+    })
+  });
 
-  const orderData = {
-    ...data,
-    order_code: orderCode,
-    status: 'menunggu',
-    payment_status: 'belum_lunas',
-    created_at: serverTimestamp()
-  };
+  const result = await response.json();
 
-  const result = await addDoc(
-    collection(db, 'orders'),
-    orderData
-  );
+  if (!response.ok || result.success !== true) {
+    throw new Error(
+      result.error || 'Pesanan gagal disimpan.'
+    );
+  }
 
   return {
-    id: result.id,
-    order_code: orderCode
+    id: result.order.orderId,
+    order_code: result.order.orderCode
   };
 }
-
