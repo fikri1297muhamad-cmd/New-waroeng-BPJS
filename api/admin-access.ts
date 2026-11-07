@@ -122,6 +122,11 @@ export default async function handler(
 
       delete claims.adminAccess;
       delete claims.adminAccessUntil;
+      await db.collection('admin_access_sessions').doc(userId).set({
+  active: false,
+  expiresAt: new Date(),
+  updatedAt: new Date()
+}, { merge: true });
 
       await auth.setCustomUserClaims(userId, claims);
       await auth.revokeRefreshTokens(userId);
