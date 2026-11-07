@@ -179,11 +179,18 @@ export default async function handler(
     const user = await auth.getUser(userId);
 
     await auth.setCustomUserClaims(userId, {
-      ...(user.customClaims || {}),
-      adminAccess: true,
-      adminAccessUntil: Math.floor(Date.now() / 1000) + 15 * 60
-    });
-    const now = Date.now();
+  ...(user.customClaims || {}),
+  adminAccess: true,
+  adminAccessUntil: Math.floor(Date.now() / 1000) + 15 * 60
+});
+
+const now = Date.now();
+
+await db.collection('admin_access_sessions').doc(userId).set({
+  active: true,
+  expiresAt: new Date(now + 15 * 60 * 1000),
+  updatedAt: new Date(now)
+});
 
 await db.collection('admin_access_sessions').doc(userId).set({
   active: true,
