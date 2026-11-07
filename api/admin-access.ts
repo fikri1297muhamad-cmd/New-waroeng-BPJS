@@ -68,11 +68,16 @@ export default async function handler(
     const action = req.body?.action;
 
     if (action === 'revoke') {
-      await auth.setCustomUserClaims(userId, {
-  ...user.customClaims,
-  adminAccess: true,
-  adminAccessUntil: Math.floor(Date.now() / 1000) + (15 * 60)
-});
+  const user = await auth.getUser(userId);
+  const claims = { ...user.customClaims };
+
+  delete claims.adminAccess;
+  delete claims.adminAccessUntil;
+
+  await auth.setCustomUserClaims(userId, claims);
+
+  return res.status(200).json({ success: true });
+    }
       await auth.setCustomUserClaims(userId, claims);
 
       return res.status(200).json({ success: true });
