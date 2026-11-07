@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { listenToMenus } from './services/firestore';
 import type { MenuItem } from './types';
+import Cart from './components/Cart';
+
+type CartItem = {
+  menu: MenuItem;
+  quantity: number;
+};
 
 const categories = [
   { id: 'semua', label: 'Semua' },
@@ -9,7 +15,7 @@ const categories = [
   { id: 'cemilan', label: 'Cemilan' }
 ];
 
-const formatRupiah = (price: number) =>
+const rupiah = (price: number) =>
   new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
@@ -18,6 +24,7 @@ const formatRupiah = (price: number) =>
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
   const [category, setCategory] = useState('semua');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,28 +46,48 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  const filteredMenus = menus.filter((item) => {
-    if (category === 'semua') return true;
+  const addToCart = (menu: MenuItem) => {
+    setCart((current) => {
+      const found = current.find(
+        (item) => item.menu.id === menu.id
+      );
 
-    if (category === 'cemilan') {
-      return item.category === 'cemilan';
-    }
+      if (found) {
+        return current.map((item) =>
+          item.menu.id === menu.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        );
+      }
 
-    return item.category === category;
-  });
+      return [...current, { menu, quantity: 1 }];
+    });
+  };
+
+  const removeFromCart = (menuId: string) => {
+    setCart((current) =>
+      current
+        .map((item) =>
+          item.menu.id === menuId
+            ? { ...item, quantity: item.quantity - 1 }
+            : item
+        )
+        .filter((item) => item.quantity > 0)
+    );
+  };
+
+  const filteredMenus = menus.filter((item) =>
+    category === 'semua' || item.category === category
+  );
 
   return (
-    <main className="min-h-screen bg-amber-50 pb-10">
+    <main className="min-h-screen bg-amber-50 pb-72">
       <header className="bg-green-800 px-5 py-7 text-white">
         <div className="mx-auto max-w-5xl">
-          <h1 className="text-3xl font-extrabold">
-            WAROENG BPJS
-          </h1>
-
+          <h1 className="text-3xl font-extrabold">WAROENG BPJS</h1>
           <p className="mt-2 text-sm text-green-100">
             Nikmat & Pas di Kantong
           </p>
-
           <p className="mt-4 text-sm leading-relaxed text-green-100">
             Jl. Kandangsapi 001/002 No. 01,
             Desa Tanjungsari, Kecamatan Sukaluyu,
@@ -70,9 +97,7 @@ export default function App() {
       </header>
 
       <section className="mx-auto max-w-5xl px-4 py-6">
-        <h2 className="mb-4 text-xl font-bold">
-          Pilihan Menu
-        </h2>
+        <h2 className="mb-4 text-xl font-bold">Pilihan Menu</h2>
 
         <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
           {categories.map((item) => (
@@ -90,11 +115,7 @@ export default function App() {
           ))}
         </div>
 
-        {loading && (
-          <p className="py-10 text-center">
-            Menghubungkan menu...
-          </p>
-        )}
+        {loading && <p className="py-10 text-center">Menghubungkan menu...</p>}
 
         {error && (
           <div className="rounded-xl bg-red-100 p-4 text-red-800">
@@ -127,9 +148,7 @@ export default function App() {
               )}
 
               <div className="p-4">
-                <h3 className="font-bold text-gray-800">
-                  {item.name}
-                </h3>
+                <h3 className="font-bold text-gray-800">{item.name}</h3>
 
                 {item.description && (
                   <p className="mt-1 text-sm text-gray-500">
@@ -138,17 +157,26 @@ export default function App() {
                 )}
 
                 <p className="mt-3 font-bold text-green-800">
-                  {formatRupiah(Number(item.price) || 0)}
+                  {rupiah(Number(item.price) || 0)}
                 </p>
+
+                <button
+                  onClick={() => addToCart(item)}
+                  className="mt-3 w-full rounded-xl bg-green-800 py-2 font-semibold text-white"
+                >
+                  + Tambah Pesanan
+                </button>
               </div>
             </article>
           ))}
         </div>
-
-        <p className="mt-8 text-center text-xs text-gray-500">
-          Pembayaran dilakukan langsung di kasir.
-        </p>
       </section>
+
+      <Cart
+        items={cart}
+        onAdd={addToCart}
+        onRemove={removeFromCart}
+      />
     </main>
   );
 }
