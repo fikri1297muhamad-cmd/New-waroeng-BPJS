@@ -206,7 +206,7 @@ orderItems.push({
   quantity: requested.quantity,
   subtotal
 });
-
+      }
 
       if (!Number.isSafeInteger(totalAmount)) {
         throw new Error('TOTAL_PESANAN_TIDAK_VALID');
