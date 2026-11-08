@@ -5,7 +5,12 @@ import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
 
 function getAdminApp() {
-  if (getApps().length) return getApps()[0];
+function getAdminApp() {
+  const existingApp = getApps().find(
+    app => app.name === '[DEFAULT]'
+  );
+
+  if (existingApp) return existingApp;
 
   const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
 
@@ -13,11 +18,17 @@ function getAdminApp() {
     throw new Error('Firebase service account belum dikonfigurasi.');
   }
 
+  const credentials = JSON.parse(serviceAccount);
+
+  if (credentials.project_id !== 'waroeng-bpjs') {
+    throw new Error('Firebase Project ID tidak sesuai.');
+  }
+
   return initializeApp({
-    credential: cert(JSON.parse(serviceAccount))
+    credential: cert(credentials),
+    projectId: credentials.project_id
   });
 }
-
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
