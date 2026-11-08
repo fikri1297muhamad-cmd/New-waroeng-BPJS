@@ -8,9 +8,6 @@ import {
 import { db } from '../firebase';
 import type { MenuItem } from '../types';
 
-import { db } from '../firebase';
-import type { MenuItem } from '../types';
-
 export function listenToMenus(
   callback: (menus: MenuItem[]) => void,
   onError?: (error: Error) => void
