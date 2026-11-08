@@ -169,38 +169,44 @@ export default async function handler(
           throw new Error('PRODUK_TIDAK_DITEMUKAN');
         }
 
-        const menu = menuSnapshot.data();
+        
+const menu = menuSnapshot.data();
 
-        if (menu?.is_available !== true) {
-          throw new Error('PRODUK_TIDAK_TERSEDIA');
-        }
+if (menu?.is_available !== true) {
+  throw new Error('PRODUK_TIDAK_TERSEDIA');
+}
 
-        if (
-          typeof menu?.name !== 'string' ||
-          typeof menu?.price !== 'number' ||
-          !Number.isFinite(menu.price) ||
-          menu.price < 0
-        ) {
-          throw new Error('DATA_PRODUK_TIDAK_VALID');
-        }
+const menuName = menu?.Nama ?? menu?.name;
+const rawPrice = menu?.Price ?? menu?.price;
+const itemPrice = Number(rawPrice);
 
-        const itemPrice = menu.price;
-        const subtotal = Math.round(itemPrice * requested.quantity);
+if (
+  typeof menuName !== 'string' ||
+  menuName.trim().length === 0 ||
+  rawPrice === null ||
+  rawPrice === undefined ||
+  !Number.isFinite(itemPrice) ||
+  itemPrice < 0
+) {
+  throw new Error('DATA_PRODUK_TIDAK_VALID');
+}
 
-        if (!Number.isSafeInteger(subtotal)) {
-          throw new Error('HARGA_PRODUK_TIDAK_VALID');
-        }
+const subtotal = Math.round(itemPrice * requested.quantity);
 
-        totalAmount += subtotal;
+if (!Number.isSafeInteger(subtotal)) {
+  throw new Error('HARGA_PRODUK_TIDAK_VALID');
+}
 
-        orderItems.push({
-          menu_id: requested.menuId,
-          item_name: menu.name,
-          item_price: itemPrice,
-          quantity: requested.quantity,
-          subtotal
-        });
-      }
+totalAmount += subtotal;
+
+orderItems.push({
+  menu_id: requested.menuId,
+  item_name: menuName.trim(),
+  item_price: itemPrice,
+  quantity: requested.quantity,
+  subtotal
+});
+
 
       if (!Number.isSafeInteger(totalAmount)) {
         throw new Error('TOTAL_PESANAN_TIDAK_VALID');
