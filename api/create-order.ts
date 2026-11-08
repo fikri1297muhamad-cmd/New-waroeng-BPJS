@@ -135,6 +135,10 @@ export default async function handler(
     );
 
     const result = await db.runTransaction(async (transaction) => {
+      console.log('PEMERIKSAAN MEJA:', {
+  projectId: getAdminApp().options.projectId,
+  tableId: tableId
+});
       const tableSnapshot = await transaction.get(tableRef);
 
       if (!tableSnapshot.exists) {
