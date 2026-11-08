@@ -150,6 +150,10 @@ export default async function handler(
   tableId: tableId
 });
       const tableSnapshot = await transaction.get(tableRef);
+      console.log('HASIL BACA MEJA:', {
+  exists: tableSnapshot.exists,
+  path: tableSnapshot.ref.path
+});
 
       if (!tableSnapshot.exists) {
         throw new Error('MEJA_TIDAK_DITEMUKAN');
