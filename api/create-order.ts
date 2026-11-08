@@ -4,7 +4,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { randomBytes } from 'node:crypto';
 
-function getAdminApp() {
+
 function getAdminApp() {
   const existingApp = getApps().find(
     app => app.name === '[DEFAULT]'
