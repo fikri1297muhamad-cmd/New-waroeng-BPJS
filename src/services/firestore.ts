@@ -1,8 +1,7 @@
+
 import {
   collection,
-  onSnapshot,
-  query,
-  orderBy
+  onSnapshot
 } from 'firebase/firestore';
 
 import { db } from '../firebase';
@@ -12,20 +11,35 @@ export function listenToMenus(
   callback: (menus: MenuItem[]) => void,
   onError?: (error: Error) => void
 ) {
-  const menuQuery = query(
-    collection(db, 'menu_items'),
-    orderBy('name')
-  );
+  const menuCollection = collection(db, 'menu_items');
 
   return onSnapshot(
-    menuQuery,
+    menuCollection,
     (snapshot) => {
-      const menus = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data()
-      })) as MenuItem[];
+      const menus = snapshot.docs.map((doc) => {
+        const raw = doc.data();
 
-      callback(menus.filter((menu) => menu.is_available !== false));
+        return {
+          id: doc.id,
+          name: String(raw.Nama ?? raw.name ?? ''),
+          description: String(
+            raw.Description ?? raw.description ?? ''
+          ),
+          image_url: String(
+            raw.Image_url ?? raw.image_url ?? ''
+          ),
+          price: Number(raw.Price ?? raw.price ?? 0),
+          category: String(
+            raw.Category ?? raw.category ?? ''
+          ).trim().toLowerCase(),
+          is_available:
+            raw.is_available !== false
+        } as MenuItem;
+      });
+
+      callback(
+        menus.filter((menu) => menu.is_available !== false)
+      );
     },
     (error) => onError?.(error)
   );
