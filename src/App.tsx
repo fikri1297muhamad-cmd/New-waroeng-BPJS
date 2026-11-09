@@ -194,10 +194,11 @@ useEffect(() => {
     <main className="min-h-screen bg-amber-50 pb-80">
     <header className="bg-green-800 px-5 py-7 text-white">
   <div className="mx-auto max-w-5xl">
-    <img
+        <img
       src="/logo.png"
       alt="Logo Waroeng BPJS"
       className="mb-4 h-32 w-32 object-contain"
+    />
 
     <h1 className="text-3xl font-extrabold">
       WAROENG BPJS
