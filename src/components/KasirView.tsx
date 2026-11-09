@@ -288,7 +288,7 @@ export default function KasirView() {
         )}
 
         <div className="mt-6 space-y-4">
-          {orders.map((order) => (
+          {orders.map((order: Order) => (
             <article
               key={order.id}
               className="rounded-2xl bg-white p-5 shadow-sm"
@@ -314,7 +314,7 @@ export default function KasirView() {
               </div>
 
               <div className="my-4 border-t pt-3">
-                {order.items?.map((item, index) => (
+                {order.items?.map((item: Order['items'][number], index: number) => (
                   <div
                     key={index}
                     className="flex justify-between gap-3 py-1 text-sm"
