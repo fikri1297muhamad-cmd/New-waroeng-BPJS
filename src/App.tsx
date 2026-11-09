@@ -197,8 +197,7 @@ useEffect(() => {
     <img
       src="/logo.png"
       alt="Logo Waroeng BPJS"
-      className="mb-4 h-32 w-32 rounded-xl bg-white object-contain p-2"
-    />
+      className="mb-4 h-32 w-32 object-contain"
 
     <h1 className="text-3xl font-extrabold">
       WAROENG BPJS
