@@ -115,7 +115,7 @@ const printReceipt = (order: Order) => {
     printWindow.print();
   }, 500);
 };
-export default function KasirView() {
+
 export default function KasirView() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
