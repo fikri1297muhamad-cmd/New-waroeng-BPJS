@@ -296,9 +296,9 @@ const printReceipt = async (order: Order) => {
 </button>
             </article>
           ))}
-        </div>
-      </div>
-              {receipt && (
+                </div>
+
+        {receipt && (
           <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4">
             <div
               id="receipt-print-area"
@@ -373,8 +373,9 @@ const printReceipt = async (order: Order) => {
               </div>
             </div>
           </div>
-        )}
-        </main>
+                )}
+      </div>
+    </main>
   </>
   );
 }
