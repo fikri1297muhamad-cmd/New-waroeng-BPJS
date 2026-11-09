@@ -9,6 +9,7 @@ import {
   getDocs
 } from 'firebase/firestore';
 
+import { db } from '../firebase';
 type Order = {
   id: string;
   order_code: string;
