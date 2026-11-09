@@ -58,10 +58,7 @@ const loadReceipt = async (
   printWindow: Window
 ) => {
 
-  if (!printWindow) {
-    alert('Izinkan pop-up pada browser untuk mencetak struk.');
-    return;
-  }
+
 
   try {
     const itemsSnapshot = await getDocs(
@@ -70,7 +67,7 @@ const loadReceipt = async (
         where('order_id', '==', order.id)
       )
     );
-
+console.log('JUMLAH RINCIAN PESANAN:', itemsSnapshot.size);
     const items = itemsSnapshot.docs.map((item) => item.data());
 
     const itemsHtml = items.map((item) => `
