@@ -1,14 +1,13 @@
-
-import { useEffect, useState } from 'react';
 import {
   collection,
   onSnapshot,
   query,
   orderBy,
   updateDoc,
-  doc
+  doc,
+  where,
+  getDocs
 } from 'firebase/firestore';
-import { db } from '../firebase';
 
 type Order = {
   id: string;
