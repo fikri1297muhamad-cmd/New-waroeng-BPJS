@@ -42,187 +42,9 @@ const statusLabels: Record<string, string> = {
   selesai: 'Selesai',
   dibatalkan: 'Dibatalkan'
 };
-const printReceipt = (order: Order) => {
-  const printWindow = window.open('', '_blank');
-
-  if (!printWindow) {
-    alert('Pop-up diblokir. Izinkan pop-up untuk website Waroeng BPJS.');
-    return;
-  }
-
-  loadReceipt(order, printWindow);
-};
-
-const loadReceipt = async (
-  order: Order,
-  printWindow: Window
-) => {
 
 
 
-  try {
-    const itemsSnapshot = await getDocs(
-      query(
-        collection(db, 'order_items'),
-        where('order_id', '==', order.id)
-      )
-    );
-console.log('JUMLAH RINCIAN PESANAN:', itemsSnapshot.size);
-    const items = itemsSnapshot.docs.map((item) => item.data());
-
-    const itemsHtml = items.map((item) => `
-      <tr>
-        <td colspan="2" class="item-name">
-          ${item.item_name}
-        </td>
-      </tr>
-      <tr>
-        <td>
-          ${item.quantity} x ${rupiah(Number(item.item_price))}
-        </td>
-        <td class="right">
-          ${rupiah(Number(item.subtotal))}
-        </td>
-      </tr>
-    `).join('');
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Struk ${order.order_code}</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            width: 48mm;
-            margin: 0 auto;
-            padding: 2mm;
-            font-size: 11px;
-            color: black;
-          }
-
-          h2, p {
-            text-align: center;
-          }
-
-          h2 {
-            font-size: 16px;
-            margin-bottom: 5px;
-          }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-          }
-
-          td {
-            padding: 3px 0;
-            vertical-align: top;
-          }
-
-          .item-name {
-            font-weight: bold;
-            padding-top: 7px;
-          }
-
-          .right {
-            text-align: right;
-            white-space: nowrap;
-          }
-
-          .line {
-            border-top: 1px dashed black;
-            margin: 8px 0;
-          }
-
-          .total {
-            font-weight: bold;
-            font-size: 14px;
-          }
-
-          @media print {
-            body {
-              width: 48mm;
-              margin: 0 auto;
-            }
-          }
-          .print-button {
-  width: 100%;
-  padding: 12px;
-  margin-top: 15px;
-  background: #166534;
-  color: white;
-  border: none;
-  font-weight: bold;
-  font-size: 12px;
-}
-
-@media print {
-  .print-button {
-    display: none;
-  }
-}
-        </style>
-      </head>
-
-      <body>
-        <h2>WAROENG BPJS</h2>
-
-        <p>
-          Jl. Kandang Sapi 001/002 No 01<br>
-          Desa Tanjungsari, Sukaluyu, Cianjur
-        </p>
-
-        <div class="line"></div>
-
-        <p style="text-align:left">
-          Kode: ${order.order_code}<br>
-          Nama: ${order.customer_name}<br>
-          Meja: ${String(order.table_number).padStart(2, '0')}
-        </p>
-
-        <div class="line"></div>
-
-        <table>
-          ${itemsHtml || '<tr><td>Rincian makanan tidak ditemukan</td></tr>'}
-        </table>
-
-        <div class="line"></div>
-
-        <p class="total">
-          TOTAL: ${rupiah(order.total_amount)}
-        </p>
-
-        <p>
-          Pembayaran: ${
-            order.payment_status === 'lunas'
-              ? 'LUNAS'
-              : 'BELUM LUNAS'
-          }
-        </p>
-
-        <div class="line"></div>
-
-        <p>Terima kasih telah berkunjung!</p>
-        <p>Selamat menikmati</p>
-        <button onclick="window.print()" class="print-button">
-  CETAK / SIMPAN PDF
-</button>
-      </body>
-      </html>
-    `);
-
-    printWindow.document.close();
-printWindow.focus();
-    
-
-  } catch (error) {
-    console.error('Gagal mengambil rincian pesanan:', error);
-    printWindow.close();
-    alert('Gagal mengambil rincian makanan dari database.');
-  }
-};
 
 export default function KasirView() {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -237,7 +59,35 @@ export default function KasirView() {
     subtotal: number;
   }[];
 } | null>(null);
+const printReceipt = async (order: Order) => {
+  try {
+    const snapshot = await getDocs(
+      query(
+        collection(db, 'order_items'),
+        where('order_id', '==', order.id)
+      )
+    );
 
+    const items = snapshot.docs.map((itemDoc) => {
+      const data = itemDoc.data();
+
+      return {
+        item_name: String(data.item_name ?? ''),
+        item_price: Number(data.item_price ?? 0),
+        quantity: Number(data.quantity ?? 0),
+        subtotal: Number(data.subtotal ?? 0),
+      };
+    });
+
+    setReceipt({
+      order,
+      items,
+    });
+  } catch (error) {
+    console.error('Gagal mengambil rincian pesanan:', error);
+    setError('Gagal mengambil rincian makanan dari database.');
+  }
+};
   useEffect(() => {
     const ordersQuery = query(
       collection(db, 'orders'),
@@ -294,11 +144,36 @@ export default function KasirView() {
   };
 
   return (
+  <>
+    <style>{`
+      @media print {
+        body * {
+          visibility: hidden !important;
+        }
+
+        #receipt-print-area,
+        #receipt-print-area * {
+          visibility: visible !important;
+        }
+
+        #receipt-print-area {
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 75mm !important;
+          max-width: 75mm !important;
+          margin: 0 !important;
+          padding: 5mm !important;
+          box-shadow: none !important;
+        }
+
+        .no-print {
+          display: none !important;
+        }
+      }
+    `}</style>
+
     <main className="min-h-screen bg-amber-50 p-4">
-      <div className="mx-auto max-w-4xl">
-        <h1 className="text-2xl font-extrabold text-green-800">
-          Kasir WAROENG BPJS
-        </h1>
 
         <p className="mt-1 text-sm text-gray-500">
           Daftar pesanan pelanggan
@@ -423,6 +298,83 @@ export default function KasirView() {
           ))}
         </div>
       </div>
-    </main>
+              {receipt && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4">
+            <div
+              id="receipt-print-area"
+              className="mx-auto max-w-sm rounded-xl bg-white p-5 text-gray-900"
+            >
+              <div className="text-center">
+                <h2 className="text-xl font-extrabold">
+                  WAROENG BPJS
+                </h2>
+                <p className="text-xs">
+                  Jl Kandang Sapi 001/002 No 01
+                </p>
+                <p className="text-xs">
+                  Desa Tanjungsari, Cianjur
+                </p>
+                <hr className="my-3" />
+                <h3 className="font-bold">STRUK PESANAN</h3>
+              </div>
+
+              <div className="my-3 text-sm">
+                <p>No: {receipt.order.order_code}</p>
+                <p>Nama: {receipt.order.customer_name}</p>
+                <p>
+                  Meja: {String(receipt.order.table_number).padStart(2, '0')}
+                </p>
+              </div>
+
+              <hr />
+
+              <div className="my-3 space-y-2 text-sm">
+                {receipt.items.map((item, index) => (
+                  <div key={index} className="flex justify-between gap-2">
+                    <span>
+                      {item.item_name} × {item.quantity}
+                    </span>
+                    <span>{rupiah(item.subtotal)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <hr />
+
+              <div className="flex justify-between py-3 font-extrabold">
+                <span>TOTAL</span>
+                <span>{rupiah(receipt.order.total_amount)}</span>
+              </div>
+
+              <p className="text-center text-sm">
+                Pembayaran: {receipt.order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+              </p>
+
+              <p className="mt-4 text-center text-sm">
+                Terima kasih telah berkunjung!
+                <br />
+                Selamat menikmati
+              </p>
+
+              <div className="no-print mt-5 space-y-2">
+                <button
+                  onClick={() => window.print()}
+                  className="w-full rounded-lg bg-green-800 p-3 font-bold text-white"
+                >
+                  CETAK / SIMPAN PDF
+                </button>
+
+                <button
+                  onClick={() => setReceipt(null)}
+                  className="w-full rounded-lg bg-gray-200 p-3 font-bold"
+                >
+                  TUTUP
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        </main>
+  </>
   );
 }
