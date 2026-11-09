@@ -173,7 +173,7 @@ export default function AdminView() {
             Daftar Produk ({menus.length})
           </h2>
 
-          {menus.map((menu) => (
+                    {menus.map((menu) => (
             <article
               key={menu.id}
               className="flex items-center justify-between gap-3 border-b py-4"
@@ -203,12 +203,10 @@ export default function AdminView() {
                   Hapus
                 </button>
               </div>
-                              <button
-                  onClick={() => removeMenu(menu)}
-                  className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
-                >
-                  Hapus
-                </button>
-              </div>
             </article>
           ))}
+        </section>
+      </div>
+    </main>
+  );
+}
