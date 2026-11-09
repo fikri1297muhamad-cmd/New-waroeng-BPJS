@@ -42,8 +42,21 @@ const statusLabels: Record<string, string> = {
   selesai: 'Selesai',
   dibatalkan: 'Dibatalkan'
 };
-const printReceipt = async (order: Order) => {
+const printReceipt = (order: Order) => {
   const printWindow = window.open('', '_blank');
+
+  if (!printWindow) {
+    alert('Pop-up diblokir. Izinkan pop-up untuk website Waroeng BPJS.');
+    return;
+  }
+
+  loadReceipt(order, printWindow);
+};
+
+const loadReceipt = async (
+  order: Order,
+  printWindow: Window
+) => {
 
   if (!printWindow) {
     alert('Izinkan pop-up pada browser untuk mencetak struk.');
