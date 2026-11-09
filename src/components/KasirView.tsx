@@ -41,7 +41,81 @@ const statusLabels: Record<string, string> = {
   selesai: 'Selesai',
   dibatalkan: 'Dibatalkan'
 };
+const printReceipt = (order: Order) => {
+  const printWindow = window.open('', '_blank');
 
+  if (!printWindow) {
+    alert('Izinkan pop-up pada browser untuk mencetak struk.');
+    return;
+  }
+
+  const itemsHtml = (order.items || []).map((item) => `
+    <tr>
+      <td>${item.item_name} × ${item.quantity}</td>
+      <td style="text-align:right">${rupiah(item.subtotal)}</td>
+    </tr>
+  `).join('');
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <title>Struk ${order.order_code}</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          width: 280px;
+          margin: 10px auto;
+          font-size: 12px;
+          color: black;
+        }
+        h2, p { text-align: center; }
+        table { width: 100%; }
+        td { padding: 5px 0; }
+        .line { border-top: 1px dashed black; margin: 10px 0; }
+        .total { font-weight: bold; font-size: 15px; }
+      </style>
+    </head>
+    <body>
+      <h2>WAROENG BPJS</h2>
+      <p>Jl. Kandang Sapi 001/002 No 01<br>
+      Desa Tanjungsari, Sukaluyu, Cianjur</p>
+
+      <div class="line"></div>
+
+      <p style="text-align:left">
+        Kode: ${order.order_code}<br>
+        Nama: ${order.customer_name}<br>
+        Meja: ${String(order.table_number).padStart(2, '0')}
+      </p>
+
+      <div class="line"></div>
+
+      <table>${itemsHtml}</table>
+
+      <div class="line"></div>
+
+      <p class="total">TOTAL: ${rupiah(order.total_amount)}</p>
+      <p>Pembayaran: ${
+        order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'
+      }</p>
+
+      <div class="line"></div>
+      <p>Terima kasih telah berkunjung!</p>
+      <p>Selamat menikmati</p>
+    </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+
+  setTimeout(() => {
+    printWindow.focus();
+    printWindow.print();
+  }, 500);
+};
+export default function KasirView() {
 export default function KasirView() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
