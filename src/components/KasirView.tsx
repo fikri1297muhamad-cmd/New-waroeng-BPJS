@@ -84,9 +84,14 @@ const printReceipt = async (order: Order) => {
       items,
     });
   } catch (error) {
-    console.error('Gagal mengambil rincian pesanan:', error);
-    setError('Gagal mengambil rincian makanan dari database.');
-  }
+  console.error('Gagal mengambil rincian pesanan:', error);
+
+  setError(
+    error instanceof Error
+      ? error.message
+      : String(error)
+  );
+}
 };
   useEffect(() => {
     const ordersQuery = query(
