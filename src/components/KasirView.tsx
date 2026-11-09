@@ -40,7 +40,7 @@ const statusLabels: Record<string, string> = {
   selesai: 'Selesai',
   dibatalkan: 'Dibatalkan'
 };
-const printReceipt = (order: Order) => {
+const printReceipt = async (order: Order) => {
   const printWindow = window.open('', '_blank');
 
   if (!printWindow) {
@@ -48,71 +48,152 @@ const printReceipt = (order: Order) => {
     return;
   }
 
-  const itemsHtml = (order.items || []).map((item) => `
-    <tr>
-      <td>${item.item_name} × ${item.quantity}</td>
-      <td style="text-align:right">${rupiah(item.subtotal)}</td>
-    </tr>
-  `).join('');
+  try {
+    const itemsSnapshot = await getDocs(
+      query(
+        collection(db, 'order_items'),
+        where('order_id', '==', order.id)
+      )
+    );
 
-  printWindow.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="UTF-8">
-      <title>Struk ${order.order_code}</title>
-      <style>
-        body {
-          font-family: Arial, sans-serif;
-          width: 280px;
-          margin: 10px auto;
-          font-size: 12px;
-          color: black;
-        }
-        h2, p { text-align: center; }
-        table { width: 100%; }
-        td { padding: 5px 0; }
-        .line { border-top: 1px dashed black; margin: 10px 0; }
-        .total { font-weight: bold; font-size: 15px; }
-      </style>
-    </head>
-    <body>
-      <h2>WAROENG BPJS</h2>
-      <p>Jl. Kandang Sapi 001/002 No 01<br>
-      Desa Tanjungsari, Sukaluyu, Cianjur</p>
+    const items = itemsSnapshot.docs.map((item) => item.data());
 
-      <div class="line"></div>
+    const itemsHtml = items.map((item) => `
+      <tr>
+        <td colspan="2" class="item-name">
+          ${item.item_name}
+        </td>
+      </tr>
+      <tr>
+        <td>
+          ${item.quantity} x ${rupiah(Number(item.item_price))}
+        </td>
+        <td class="right">
+          ${rupiah(Number(item.subtotal))}
+        </td>
+      </tr>
+    `).join('');
 
-      <p style="text-align:left">
-        Kode: ${order.order_code}<br>
-        Nama: ${order.customer_name}<br>
-        Meja: ${String(order.table_number).padStart(2, '0')}
-      </p>
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Struk ${order.order_code}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            width: 48mm;
+            margin: 0 auto;
+            padding: 2mm;
+            font-size: 11px;
+            color: black;
+          }
 
-      <div class="line"></div>
+          h2, p {
+            text-align: center;
+          }
 
-      <table>${itemsHtml}</table>
+          h2 {
+            font-size: 16px;
+            margin-bottom: 5px;
+          }
 
-      <div class="line"></div>
+          table {
+            width: 100%;
+            border-collapse: collapse;
+          }
 
-      <p class="total">TOTAL: ${rupiah(order.total_amount)}</p>
-      <p>Pembayaran: ${
-        order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'
-      }</p>
+          td {
+            padding: 3px 0;
+            vertical-align: top;
+          }
 
-      <div class="line"></div>
-      <p>Terima kasih telah berkunjung!</p>
-      <p>Selamat menikmati</p>
-    </body>
-    </html>
-  `);
+          .item-name {
+            font-weight: bold;
+            padding-top: 7px;
+          }
 
-  printWindow.document.close();
+          .right {
+            text-align: right;
+            white-space: nowrap;
+          }
 
-  setTimeout(() => {
-    printWindow.focus();
-    printWindow.print();
-  }, 500);
+          .line {
+            border-top: 1px dashed black;
+            margin: 8px 0;
+          }
+
+          .total {
+            font-weight: bold;
+            font-size: 14px;
+          }
+
+          @media print {
+            body {
+              width: 48mm;
+              margin: 0 auto;
+            }
+          }
+        </style>
+      </head>
+
+      <body>
+        <h2>WAROENG BPJS</h2>
+
+        <p>
+          Jl. Kandang Sapi 001/002 No 01<br>
+          Desa Tanjungsari, Sukaluyu, Cianjur
+        </p>
+
+        <div class="line"></div>
+
+        <p style="text-align:left">
+          Kode: ${order.order_code}<br>
+          Nama: ${order.customer_name}<br>
+          Meja: ${String(order.table_number).padStart(2, '0')}
+        </p>
+
+        <div class="line"></div>
+
+        <table>
+          ${itemsHtml || '<tr><td>Rincian makanan tidak ditemukan</td></tr>'}
+        </table>
+
+        <div class="line"></div>
+
+        <p class="total">
+          TOTAL: ${rupiah(order.total_amount)}
+        </p>
+
+        <p>
+          Pembayaran: ${
+            order.payment_status === 'lunas'
+              ? 'LUNAS'
+              : 'BELUM LUNAS'
+          }
+        </p>
+
+        <div class="line"></div>
+
+        <p>Terima kasih telah berkunjung!</p>
+        <p>Selamat menikmati</p>
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 500);
+
+  } catch (error) {
+    console.error('Gagal mengambil rincian pesanan:', error);
+    printWindow.close();
+    alert('Gagal mengambil rincian makanan dari database.');
+  }
 };
 
 export default function KasirView() {
