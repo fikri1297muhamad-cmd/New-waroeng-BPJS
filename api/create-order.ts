@@ -169,12 +169,15 @@ console.log(
 
       const tableData = tableSnapshot.data();
 
-      if (
-        tableData?.is_active !== true ||
-        Number(tableData?.table_number) !== tableNumber
-      ) {
-        throw new Error('MEJA_TIDAK_AKTIF');
-      }
+const nomorMejaFirebase =
+  tableData?.Table_number ?? tableData?.table_number;
+
+if (
+  tableData?.is_active !== true ||
+  Number(nomorMejaFirebase) !== tableNumber
+) {
+  throw new Error('MEJA_TIDAK_AKTIF');
+}
 
       const menuSnapshots = await Promise.all(
         normalizedItems.map(item =>
