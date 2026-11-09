@@ -296,6 +296,12 @@ export default function KasirView() {
                     : 'Catat LUNAS'}
                 </button>
               </div>
+              <button
+  onClick={() => printReceipt(order)}
+  className="mt-3 w-full rounded-lg bg-gray-800 p-3 text-sm font-bold text-white"
+>
+  CETAK STRUK
+</button>
             </article>
           ))}
         </div>
