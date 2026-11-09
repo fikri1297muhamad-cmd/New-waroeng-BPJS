@@ -174,8 +174,9 @@ const printReceipt = async (order: Order) => {
     `}</style>
 
     <main className="min-h-screen bg-amber-50 p-4">
+  <div className="mx-auto max-w-4xl">
 
-        <p className="mt-1 text-sm text-gray-500">
+    <p className="mt-1 text-sm text-gray-500">
           Daftar pesanan pelanggan
         </p>
 
@@ -373,8 +374,8 @@ const printReceipt = async (order: Order) => {
               </div>
             </div>
           </div>
-                )}
-      </div>
+                        )}
+  </div>
     </main>
   </>
   );
