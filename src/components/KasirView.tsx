@@ -147,6 +147,22 @@ console.log('JUMLAH RINCIAN PESANAN:', itemsSnapshot.size);
               margin: 0 auto;
             }
           }
+          .print-button {
+  width: 100%;
+  padding: 12px;
+  margin-top: 15px;
+  background: #166534;
+  color: white;
+  border: none;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+@media print {
+  .print-button {
+    display: none;
+  }
+}
         </style>
       </head>
 
@@ -190,16 +206,16 @@ console.log('JUMLAH RINCIAN PESANAN:', itemsSnapshot.size);
 
         <p>Terima kasih telah berkunjung!</p>
         <p>Selamat menikmati</p>
+        <button onclick="window.print()" class="print-button">
+  CETAK / SIMPAN PDF
+</button>
       </body>
       </html>
     `);
 
     printWindow.document.close();
-
-    setTimeout(() => {
-      printWindow.focus();
-      printWindow.print();
-    }, 500);
+printWindow.focus();
+    
 
   } catch (error) {
     console.error('Gagal mengambil rincian pesanan:', error);
