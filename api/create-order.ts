@@ -133,7 +133,7 @@ export default async function handler(
 
     const db = getFirestore(getAdminApp());
 const cekMeja = await db
-  .collection('restaurant_tables')
+  .collection('Restaurant_table')
   .limit(10)
   .get();
 
@@ -142,7 +142,7 @@ console.log(
   cekMeja.docs.map(doc => doc.id)
 );
     const tableId = `Meja ${String(tableNumber).padStart(2, '0')}`;
-    const tableRef = db.collection('restaurant_tables').doc(tableId);
+    const tableRef = db.collection('Restaurant_table').doc(tableId);
 
     const orderRef = db.collection('orders').doc();
     const orderCode =
