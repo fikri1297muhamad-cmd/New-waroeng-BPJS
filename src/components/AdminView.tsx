@@ -203,16 +203,12 @@ export default function AdminView() {
                   Hapus
                 </button>
               </div>
-              <button
-  onClick={() => printReceipt(order)}
-  className="mt-3 w-full rounded-lg bg-gray-800 p-3 text-sm font-bold text-white"
->
-  CETAK STRUK
-</button>
+                              <button
+                  onClick={() => removeMenu(menu)}
+                  className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
+                >
+                  Hapus
+                </button>
+              </div>
             </article>
           ))}
-        </section>
-      </div>
-    </main>
-  );
-}
