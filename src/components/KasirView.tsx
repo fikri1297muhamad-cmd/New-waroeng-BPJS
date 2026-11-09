@@ -228,6 +228,15 @@ export default function KasirView() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [receipt, setReceipt] = useState<{
+  order: Order;
+  items: {
+    item_name: string;
+    item_price: number;
+    quantity: number;
+    subtotal: number;
+  }[];
+} | null>(null);
 
   useEffect(() => {
     const ordersQuery = query(
