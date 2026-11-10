@@ -46,7 +46,19 @@ export default function StaffLogin({ onLogin }: Props) {
       }
 
       
+
+const profileSnapshot = await getDoc(
+  doc(db, 'staff_profiles', credential.user.uid)
+);
+
+if (!profileSnapshot.exists()) {
+  throw new Error('Profil staf belum terdaftar.');
+}
+
 const profile = profileSnapshot.data();
+
+console.log('DATA PROFIL LOGIN:', profile);
+console.log('ROLE TERBACA:', profile.role);
 
 const role = String(profile.role ?? '')
   .trim()
@@ -55,7 +67,9 @@ const role = String(profile.role ?? '')
 const isAdmin = role === 'admin' || role === 'admin 01';
 
 if (!isAdmin && role !== 'kasir') {
-  throw new Error('Jabatan akun tidak valid.');
+  throw new Error(
+    `Jabatan akun tidak valid. Role terbaca: "${role}"`
+  );
 }
 
 const name = profile.full_name || email.trim();
@@ -69,10 +83,6 @@ setAdminName(name);
 setStep('admin-code');
 setPassword('');
 
-
-      setAdminName(name);
-      setStep('admin-code');
-      setPassword('');
     } catch (err) {
       console.error(err);
 
