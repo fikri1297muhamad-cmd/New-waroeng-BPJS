@@ -96,7 +96,8 @@ export default function AdminView() {
 
         formData.append('file', selectedFile);
         formData.append('upload_preset', 'waroeng_bpjs');
-
+console.log('MULAI UPLOAD CLOUDINARY');
+console.log('FILE:', selectedFile?.name, selectedFile?.size);
         const response = await fetch(
           'https://api.cloudinary.com/v1_1/irwzbli5/image/upload',
           {
