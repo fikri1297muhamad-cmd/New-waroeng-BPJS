@@ -108,11 +108,21 @@ export default async function handler(
       .doc(userId)
       .get();
 
-    if (!profile.exists || profile.data()?.role !== 'admin') {
-      return res.status(403).json({
-        error: 'Akses Admin ditolak.'
-      });
-    }
+    
+const profileData = profile.data();
+
+const role = String(profileData?.role ?? '')
+  .trim()
+  .toLowerCase();
+
+const isAdmin = role === 'admin' || role === 'admin 01';
+
+if (!profile.exists || !isAdmin) {
+  return res.status(403).json({
+    error: 'Akses Admin ditolak.'
+  });
+}
+
 
     const action = req.body?.action;
 
