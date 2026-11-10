@@ -105,7 +105,16 @@ export default function AdminView() {
           }
         );
 
-        const result = await response.json();
+        const responseText = await response.text();
+
+let result: any;
+
+try {
+  result = JSON.parse(responseText);
+} catch {
+  console.error('Respons Cloudinary:', responseText);
+  throw new Error('Respons Cloudinary bukan JSON. Periksa konfigurasi upload.');
+}
 
         if (!response.ok || !result.secure_url) {
           throw new Error(
