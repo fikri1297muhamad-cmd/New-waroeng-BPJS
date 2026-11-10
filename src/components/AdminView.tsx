@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import {
   collection,
   onSnapshot,
@@ -24,7 +24,8 @@ export default function AdminView() {
   const [category, setCategory] = useState('makanan');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
-  const [imageUrl, setImageUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -46,6 +47,38 @@ export default function AdminView() {
     );
   }, []);
 
+  useEffect(() => {
+    if (!selectedFile) {
+      setPreviewUrl('');
+      return;
+    }
+
+    const url = URL.createObjectURL(selectedFile);
+    setPreviewUrl(url);
+
+    return () => URL.revokeObjectURL(url);
+  }, [selectedFile]);
+
+  const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setError('File harus berupa foto.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Ukuran foto maksimal 5 MB.');
+      return;
+    }
+
+    setError('');
+    setSelectedFile(file);
+  };
+
   const addMenu = async () => {
     if (!name.trim() || !price || Number(price) <= 0) {
       setError('Nama dan harga menu wajib diisi dengan benar.');
@@ -56,22 +89,55 @@ export default function AdminView() {
     setError('');
 
     try {
+      let imageUrl = '';
+
+      if (selectedFile) {
+        const formData = new FormData();
+
+        formData.append('file', selectedFile);
+        formData.append('upload_preset', 'waroeng_bpjs');
+
+        const response = await fetch(
+          'https://api.cloudinary.com/v1_1/irwzbli5/image/upload',
+          {
+            method: 'POST',
+            body: formData
+          }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok || !result.secure_url) {
+          throw new Error(
+            result.error?.message || 'Gagal mengunggah foto.'
+          );
+        }
+
+        imageUrl = result.secure_url;
+      }
+
       await addDoc(collection(db, 'menu_items'), {
         name: name.trim(),
         category,
         price: Number(price),
         description: description.trim(),
-        image_url: imageUrl.trim(),
+        image_url: imageUrl,
         is_available: true
       });
 
       setName('');
       setPrice('');
       setDescription('');
-      setImageUrl('');
+      setSelectedFile(null);
+
+      alert('Produk berhasil disimpan!');
     } catch (err) {
       console.error(err);
-      setError('Gagal menambahkan menu. Periksa hak akses Admin.');
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal menyimpan produk.'
+      );
     } finally {
       setSaving(false);
     }
@@ -146,12 +212,38 @@ export default function AdminView() {
             className="mb-3 w-full rounded-xl border p-3"
           />
 
-          <input
-            value={imageUrl}
-            onChange={(e) => setImageUrl(e.target.value)}
-            placeholder="URL foto produk (opsional)"
-            className="mb-3 w-full rounded-xl border p-3"
-          />
+          <div className="mb-3 rounded-xl border border-dashed p-4">
+            <label className="mb-2 block font-bold">
+              Foto Produk
+            </label>
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handlePhotoChange}
+              className="w-full text-sm"
+            />
+
+            {previewUrl && (
+              <div className="mt-3">
+                <p className="mb-2 text-sm text-gray-500">
+                  Pratinjau foto:
+                </p>
+                <img
+                  src={previewUrl}
+                  alt="Pratinjau produk"
+                  className="h-40 w-full rounded-xl object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSelectedFile(null)}
+                  className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700"
+                >
+                  Hapus Foto
+                </button>
+              </div>
+            )}
+          </div>
 
           {error && (
             <p className="mb-3 rounded-lg bg-red-100 p-3 text-sm text-red-800">
@@ -162,9 +254,9 @@ export default function AdminView() {
           <button
             onClick={addMenu}
             disabled={saving}
-            className="w-full rounded-xl bg-green-800 py-3 font-bold text-white"
+            className="w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:opacity-50"
           >
-            {saving ? 'Menyimpan...' : 'Simpan Produk'}
+            {saving ? 'Mengunggah dan Menyimpan...' : 'Simpan Produk'}
           </button>
         </section>
 
@@ -173,19 +265,29 @@ export default function AdminView() {
             Daftar Produk ({menus.length})
           </h2>
 
-                    {menus.map((menu) => (
+          {menus.map((menu) => (
             <article
               key={menu.id}
               className="flex items-center justify-between gap-3 border-b py-4"
             >
-              <div className="min-w-0">
-                <p className="font-bold">{menu.name}</p>
-                <p className="text-sm text-gray-500">
-                  {menu.category} · {rupiah(Number(menu.price) || 0)}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {menu.is_available ? 'Tersedia' : 'Tidak tersedia'}
-                </p>
+              <div className="flex min-w-0 items-center gap-3">
+                {menu.image_url && (
+                  <img
+                    src={menu.image_url}
+                    alt={menu.name}
+                    className="h-16 w-16 rounded-lg object-cover"
+                  />
+                )}
+
+                <div className="min-w-0">
+                  <p className="font-bold">{menu.name}</p>
+                  <p className="text-sm text-gray-500">
+                    {menu.category} · {rupiah(Number(menu.price) || 0)}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {menu.is_available ? 'Tersedia' : 'Tidak tersedia'}
+                  </p>
+                </div>
               </div>
 
               <div className="flex shrink-0 flex-col gap-2">
