@@ -45,19 +45,30 @@ export default function StaffLogin({ onLogin }: Props) {
         throw new Error('Profil staf belum terdaftar.');
       }
 
-      const profile = profileSnapshot.data();
-      const role = profile.role;
+      
+const profile = profileSnapshot.data();
 
-      if (role !== 'admin' && role !== 'kasir') {
-        throw new Error('Jabatan akun tidak valid.');
-      }
+const role = String(profile.role ?? '')
+  .trim()
+  .toLowerCase();
 
-      const name = profile.full_name || email.trim();
+const isAdmin = role === 'admin' || role === 'admin 01';
 
-      if (role === 'kasir') {
-        onLogin(name, 'kasir');
-        return;
-      }
+if (!isAdmin && role !== 'kasir') {
+  throw new Error('Jabatan akun tidak valid.');
+}
+
+const name = profile.full_name || email.trim();
+
+if (role === 'kasir') {
+  onLogin(name, 'kasir');
+  return;
+}
+
+setAdminName(name);
+setStep('admin-code');
+setPassword('');
+
 
       setAdminName(name);
       setStep('admin-code');
