@@ -37,14 +37,7 @@ export default function StaffLogin({ onLogin }: Props) {
         password
       );
 
-      const profileSnapshot = await getDoc(
-        doc(db, 'staff_profiles', credential.user.uid)
-      );
-
-      if (!profileSnapshot.exists()) {
-        throw new Error('Profil staf belum terdaftar.');
-      }
-
+      
       
 
 const profileSnapshot = await getDoc(
