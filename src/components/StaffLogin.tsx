@@ -176,7 +176,14 @@ setPassword('');
         <p className="mt-2 text-gray-500">
           Login khusus Admin dan Kasir
         </p>
-
+<button
+  type="button"
+  onClick={onBack}
+  disabled={loading}
+  className="mt-4 w-full rounded-xl border border-green-700 py-3 font-semibold text-green-800 hover:bg-green-50 disabled:opacity-50"
+>
+  ← Kembali ke Halaman Pelanggan
+</button>
         {step === 'login' ? (
           <>
             <label className="mb-2 mt-6 block text-sm font-semibold">
