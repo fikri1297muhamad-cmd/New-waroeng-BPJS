@@ -279,49 +279,62 @@ useEffect(() => {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="grid grid-cols-2 gap-3 sm:gap-5">
           {filteredMenus.map((item) => (
-            <article
+            
+<article
   key={item.id}
-  className="flex aspect-square flex-col overflow-hidden rounded-xl bg-white shadow-sm"
+  className="overflow-hidden rounded-2xl bg-white shadow-md"
 >
-              
-{item.image_url ? (
-  <img
-    src={item.image_url}
-    alt={item.name}
-    className="h-2/5 w-full object-cover"
-  />
-) : (
-  <div className="flex h-2/5 w-full items-center justify-center bg-green-50 text-3xl">
-    🍽️
+  <div className="relative aspect-[4/3] w-full bg-green-50">
+    {item.image_url ? (
+      <img
+        src={item.image_url}
+        alt={item.name}
+        className="h-full w-full object-cover"
+      />
+    ) : (
+      <div className="flex h-full items-center justify-center text-5xl">
+        🍽️
+      </div>
+    )}
+
+    <span className="absolute left-2 top-2 rounded-lg bg-black/70 px-3 py-1 text-[10px] font-semibold text-white sm:text-xs">
+      {item.category}
+    </span>
   </div>
-)}
 
-<div className="flex min-h-0 flex-1 flex-col p-2">
-  <h3 className="line-clamp-2 text-xs font-bold text-gray-800 sm:text-sm">
-    {item.name}
-  </h3>
+  <div className="p-3">
+    <h3 className="line-clamp-2 min-h-10 text-sm font-bold text-gray-900 sm:text-base">
+      {item.name}
+    </h3>
 
-  {item.description && (
-    <p className="mt-1 line-clamp-2 overflow-hidden text-[10px] leading-tight text-gray-500 sm:text-xs">
-      {item.description}
-    </p>
-  )}
+    {item.description && (
+      <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-relaxed text-gray-500 sm:text-sm">
+        {item.description}
+      </p>
+    )}
 
-  <p className="mt-auto pt-1 text-xs font-bold text-green-800 sm:text-sm">
-    {rupiah(Number(item.price) || 0)}
-  </p>
+    <div className="mt-3 flex items-end justify-between gap-2 border-t border-gray-100 pt-3">
+      <div className="min-w-0">
+        <p className="text-[10px] text-gray-400 sm:text-xs">
+          HARGA
+        </p>
+        <p className="text-sm font-extrabold text-amber-700 sm:text-base">
+          {rupiah(Number(item.price) || 0)}
+        </p>
+      </div>
 
-  <button
-    onClick={() => addToCart(item)}
-    className="mt-1 w-full rounded-lg bg-green-800 py-1.5 text-[10px] font-semibold text-white sm:text-xs"
-  >
-    + Tambah
-  </button>
-</div>
+      <button
+        onClick={() => addToCart(item)}
+        className="shrink-0 rounded-xl bg-orange-500 px-3 py-3 text-xs font-bold text-white shadow-sm hover:bg-orange-600 sm:px-4"
+      >
+        + Pesan
+      </button>
+    </div>
+  </div>
+</article>
 
-            </article>
           ))}
         </div>
 
