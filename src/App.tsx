@@ -203,8 +203,13 @@ useEffect(() => {
   }
 
     if (showStaffLogin) {
-    return <StaffLogin onLogin={handleStaffLogin} />;
-  }
+  return (
+    <StaffLogin
+      onLogin={handleStaffLogin}
+      onBack={() => setShowStaffLogin(false)}
+    />
+  );
+    }
 
   return (
     <main className="min-h-screen bg-amber-50 pb-80">
