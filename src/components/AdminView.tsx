@@ -318,64 +318,57 @@ const cancelEdit = () => {
             Daftar Produk ({menus.length})
           </h2>
 
-          {menus.map((menu) => (
-            <article
-              key={menu.id}
-              className="flex items-center justify-between gap-3 border-b py-4"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                {menu.image_url && (
-                  <img
-                    src={menu.image_url}
-                    alt={menu.name}
-                    className="h-16 w-16 rounded-lg object-cover"
-                  />
-                )}
-
-                <div className="min-w-0">
-                  <p className="font-bold">{menu.name}</p>
-                  <p className="text-sm text-gray-500">
-                    {menu.category} · {rupiah(Number(menu.price) || 0)}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {menu.is_available ? 'Tersedia' : 'Tidak tersedia'}
-                  </p>
-                </div>
-              </div>
-
-              
-
-<div className="flex shrink-0 flex-col gap-2">
-  <button
-    type="button"
-    onClick={() => startEdit(menu)}
-    className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
+          
+{menus.map((menu) => (
+  <article
+    key={menu.id}
+    className="flex items-center justify-between gap-3 border-b py-4"
   >
-    Edit
-  </button>
+    <div className="flex min-w-0 items-center gap-3">
+      {menu.image_url && (
+        <img
+          src={menu.image_url}
+          alt={menu.name}
+          className="h-16 w-16 rounded-lg object-cover"
+        />
+      )}
 
-  <button
-    type="button"
-    onClick={() => toggleAvailability(menu)}
-    className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold"
-  >
-    Ubah Status
-  </button>
-
-  <button
-    type="button"
-    onClick={() => removeMenu(menu)}
-    className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
-  >
-    Hapus
-  </button>
-</div>
-
-              </div>
-            </article>
-          ))}
-        </section>
+      <div className="min-w-0">
+        <p className="font-bold">{menu.name}</p>
+        <p className="text-sm text-gray-500">
+          {menu.category} · {rupiah(Number(menu.price) || 0)}
+        </p>
+        <p className="text-xs text-gray-500">
+          {menu.is_available ? 'Tersedia' : 'Tidak tersedia'}
+        </p>
       </div>
-    </main>
-  );
-}
+    </div>
+
+    <div className="flex shrink-0 flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => startEdit(menu)}
+        className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
+      >
+        Edit
+      </button>
+
+      <button
+        type="button"
+        onClick={() => toggleAvailability(menu)}
+        className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold"
+      >
+        Ubah Status
+      </button>
+
+      <button
+        type="button"
+        onClick={() => removeMenu(menu)}
+        className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
+      >
+        Hapus
+      </button>
+    </div>
+  </article>
+))}
+
