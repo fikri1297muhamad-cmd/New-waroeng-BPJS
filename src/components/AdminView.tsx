@@ -167,6 +167,22 @@ const addMenu = async () => {
 };
 
 
+
+const startEdit = (menu: MenuItem) => {
+  setEditingMenu(menu);
+  setName(menu.name);
+  setCategory(menu.category);
+  setPrice(String(menu.price));
+  setDescription(menu.description || '');
+  setSelectedFile(null);
+  setExistingImageUrl(menu.image_url || '');
+  setError('');
+
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  });
+};
 const cancelEdit = () => {
   setEditingMenu(null);
   setName('');
