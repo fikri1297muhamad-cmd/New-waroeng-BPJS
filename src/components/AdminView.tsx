@@ -343,26 +343,30 @@ const cancelEdit = () => {
                 </div>
               </div>
 
-              <div className="flex shrink-0 flex-col gap-2">
-                <button
-                  onClick={() => toggleAvailability(menu)}
-                  className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold"
-                  <button
-  onClick={() => startEdit(menu)}
-  className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
->
-  Edit
-</button>
-                >
-                  Ubah Status
-                </button>
+              
+<div className="flex shrink-0 flex-col gap-2">
+  <button
+    onClick={() => startEdit(menu)}
+    className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
+  >
+    Edit
+  </button>
 
-                <button
-                  onClick={() => removeMenu(menu)}
-                  className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
-                >
-                  Hapus
-                </button>
+  <button
+    onClick={() => toggleAvailability(menu)}
+    className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold"
+  >
+    Ubah Status
+  </button>
+
+  <button
+    onClick={() => removeMenu(menu)}
+    className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
+  >
+    Hapus
+  </button>
+</div>
+
               </div>
             </article>
           ))}
