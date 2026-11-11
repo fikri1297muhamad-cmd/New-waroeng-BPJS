@@ -133,7 +133,7 @@ export default async function handler(
 
     const db = getFirestore(getAdminApp());
 const cekMeja = await db
-  .collection('Restaurant_table')
+  .collection('restaurant_tables')
   .limit(10)
   .get();
 
