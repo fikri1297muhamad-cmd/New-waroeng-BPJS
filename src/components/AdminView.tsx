@@ -344,8 +344,10 @@ const cancelEdit = () => {
               </div>
 
               
+
 <div className="flex shrink-0 flex-col gap-2">
   <button
+    type="button"
     onClick={() => startEdit(menu)}
     className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
   >
@@ -353,6 +355,7 @@ const cancelEdit = () => {
   </button>
 
   <button
+    type="button"
     onClick={() => toggleAvailability(menu)}
     className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold"
   >
@@ -360,6 +363,7 @@ const cancelEdit = () => {
   </button>
 
   <button
+    type="button"
     onClick={() => removeMenu(menu)}
     className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
   >
