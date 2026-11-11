@@ -31,7 +31,7 @@ const rupiah = (price: number) =>
   }).format(price);
 
 export default function App() {
-  const [menus, setMenus] = useState<MenuItem[]>([]);
+  const [pressedMenuId, setPressedMenuId] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>(() => {
   try {
     const savedCart = localStorage.getItem('waroeng_bpjs_cart');
@@ -286,7 +286,12 @@ useEffect(() => {
   key={item.id}
   className="overflow-hidden rounded-2xl bg-white shadow-md"
 >
-  <div className="relative aspect-[4/3] w-full bg-green-50">
+  <div
+  className="relative aspect-[4/3] w-full bg-green-50"
+  onTouchStart={() => setPressedMenuId(item.id)}
+  onTouchEnd={() => setPressedMenuId(null)}
+  onTouchCancel={() => setPressedMenuId(null)}
+>
     {item.image_url ? (
       <img
         src={item.image_url}
