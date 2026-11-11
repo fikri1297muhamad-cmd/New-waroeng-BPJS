@@ -83,7 +83,44 @@ const [existingImageUrl, setExistingImageUrl] = useState('');
     setSelectedFile(file);
   };
 
-  
+  const seedRestaurantTables = async () => {
+  setSeedingTables(true);
+  setSeedMessage('');
+
+  try {
+    const user = getAuth().currentUser;
+
+    if (!user) {
+      throw new Error('Silakan login sebagai Admin terlebih dahulu.');
+    }
+
+    const token = await user.getIdToken(true);
+
+    const response = await fetch('/api/seed-tables', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(result.error || 'Gagal menyiapkan meja.');
+    }
+
+    setSeedMessage(
+      `Berhasil! ${result.created} meja dibuat. ${result.alreadyExists} meja sudah tersedia.`
+    );
+  } catch (err) {
+    setSeedMessage(
+      err instanceof Error ? err.message : 'Gagal menyiapkan meja.'
+    );
+  } finally {
+    setSeedingTables(false);
+  }
+};
 const addMenu = async () => {
   if (!name.trim() || !price || Number(price) <= 0) {
     setError('Nama dan harga menu wajib diisi dengan benar.');
