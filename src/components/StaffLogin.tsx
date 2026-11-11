@@ -204,14 +204,27 @@ setPassword('');
               Password
             </label>
 
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Masukkan password"
-              className="w-full rounded-xl border p-3"
-            />
+            
+<div className="relative">
+  <input
+    type={showPassword ? 'text' : 'password'}
+    autoComplete="current-password"
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+    placeholder="Masukkan password"
+    className="w-full rounded-xl border p-3 pr-12"
+  />
+
+  <button
+    type="button"
+    onClick={() => setShowPassword(!showPassword)}
+    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600"
+    aria-label={showPassword ? 'Sembunyikan password' : 'Lihat password'}
+  >
+    {showPassword ? '🙈' : '👁️'}
+  </button>
+</div>
+
 
             <button
               onClick={handleLogin}
