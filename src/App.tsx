@@ -31,6 +31,7 @@ const rupiah = (price: number) =>
   }).format(price);
 
 export default function App() {
+  const [menus, setMenus] = useState<MenuItem[]>([]);
   const [pressedMenuId, setPressedMenuId] = useState<string | null>(null);
   const [cart, setCart] = useState<CartItem[]>(() => {
   try {
