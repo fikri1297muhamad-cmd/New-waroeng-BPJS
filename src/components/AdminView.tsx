@@ -265,7 +265,30 @@ const cancelEdit = () => {
         <p className="mt-1 text-sm text-gray-500">
           Pengelolaan produk dan harga menu
         </p>
+<section className="mt-4 rounded-2xl bg-green-100 p-4">
+  <h2 className="font-bold text-green-900">
+    Pengaturan Meja Restoran
+  </h2>
 
+  <p className="mt-1 text-sm text-green-800">
+    Siapkan nomor meja 01 sampai 50 secara otomatis.
+  </p>
+
+  <button
+    type="button"
+    onClick={seedRestaurantTables}
+    disabled={seedingTables}
+    className="mt-3 w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:opacity-50"
+  >
+    {seedingTables ? 'Menyiapkan Meja...' : 'Siapkan 50 Meja'}
+  </button>
+
+  {seedMessage && (
+    <p className="mt-3 text-sm font-semibold text-green-900">
+      {seedMessage}
+    </p>
+  )}
+</section>
         <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
           <h2 className="mb-4 text-lg font-bold">
   {editingMenu ? 'Edit Produk' : 'Tambah Menu'}
