@@ -177,9 +177,16 @@ useEffect(() => {
         items: orderItems,
         total_amount: total
       });
+            setSuccessOrder({
+        orderCode: result.order_code,
+        name: customerName,
+        table: tableNumber,
+        items: [...orderItems],
+        total: total
+      });
+
       setCart([]);
       setShowConfirmation(false);
-      setSuccessCode(result.order_code);
     } catch (err) {
       console.error(err);
       setOrderError(
