@@ -52,7 +52,19 @@ export default function App() {
   const [tableNumber, setTableNumber] = useState(0);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [sending, setSending] = useState(false);
-  const [successCode, setSuccessCode] = useState('');
+  const [successOrder, setSuccessOrder] = useState<{
+  orderCode: string;
+  name: string;
+  table: number;
+  items: {
+    menu_id: string;
+    item_name: string;
+    item_price: number;
+    quantity: number;
+    subtotal: number;
+  }[];
+  total: number;
+} | null>(null);
   const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
   const [staffName, setStaffName] = useState('');
   const [showStaffLogin, setShowStaffLogin] = useState(false);
