@@ -28,7 +28,8 @@ export default function AdminView() {
   const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-
+const [editingMenu, setEditingMenu] = useState<MenuItem | null>(null);
+const [existingImageUrl, setExistingImageUrl] = useState('');
   useEffect(() => {
     return onSnapshot(
       collection(db, 'menu_items'),
@@ -79,80 +80,103 @@ export default function AdminView() {
     setSelectedFile(file);
   };
 
-  const addMenu = async () => {
-    if (!name.trim() || !price || Number(price) <= 0) {
-      setError('Nama dan harga menu wajib diisi dengan benar.');
-      return;
-    }
+  
+const addMenu = async () => {
+  if (!name.trim() || !price || Number(price) <= 0) {
+    setError('Nama dan harga menu wajib diisi dengan benar.');
+    return;
+  }
 
-    setSaving(true);
-    setError('');
+  setSaving(true);
+  setError('');
 
-    try {
-      let imageUrl = '';
+  try {
+    let imageUrl = editingMenu
+      ? existingImageUrl
+      : '';
 
-      if (selectedFile) {
-        const formData = new FormData();
+    if (selectedFile) {
+      const formData = new FormData();
 
-        formData.append('file', selectedFile);
-        formData.append('upload_preset', 'waroeng_bpjs');
-console.log('MULAI UPLOAD CLOUDINARY');
-console.log('FILE:', selectedFile?.name, selectedFile?.size);
-        const response = await fetch(
-          'https://api.cloudinary.com/v1_1/irwzbli5/image/upload',
-          {
-            method: 'POST',
-            body: formData
-          }
-        );
+      formData.append('file', selectedFile);
+      formData.append('upload_preset', 'waroeng_bpjs');
 
-        const responseText = await response.text();
-
-let result: any;
-
-try {
-  result = JSON.parse(responseText);
-} catch {
-  console.error('Respons Cloudinary:', responseText);
-  throw new Error('Respons Cloudinary bukan JSON. Periksa konfigurasi upload.');
-}
-
-        if (!response.ok || !result.secure_url) {
-          throw new Error(
-            result.error?.message || 'Gagal mengunggah foto.'
-          );
+      const response = await fetch(
+        'https://api.cloudinary.com/v1_1/irwzbli5/image/upload',
+        {
+          method: 'POST',
+          body: formData
         }
+      );
 
-        imageUrl = result.secure_url;
+      const responseText = await response.text();
+      let result: any;
+
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        throw new Error('Respons Cloudinary tidak valid.');
       }
 
+      if (!response.ok || !result.secure_url) {
+        throw new Error(
+          result.error?.message || 'Gagal mengunggah foto.'
+        );
+      }
+
+      imageUrl = result.secure_url;
+    }
+
+    const productData = {
+      name: name.trim(),
+      category,
+      price: Number(price),
+      description: description.trim(),
+      image_url: imageUrl
+    };
+
+    if (editingMenu) {
+      await updateDoc(
+        doc(db, 'menu_items', editingMenu.id),
+        productData
+      );
+
+      alert('Produk berhasil diperbarui!');
+    } else {
       await addDoc(collection(db, 'menu_items'), {
-        name: name.trim(),
-        category,
-        price: Number(price),
-        description: description.trim(),
-        image_url: imageUrl,
+        ...productData,
         is_available: true
       });
 
-      setName('');
-      setPrice('');
-      setDescription('');
-      setSelectedFile(null);
-
       alert('Produk berhasil disimpan!');
-    } catch (err) {
-      console.error(err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Gagal menyimpan produk.'
-      );
-    } finally {
-      setSaving(false);
     }
-  };
 
+    cancelEdit();
+
+  } catch (err) {
+    console.error(err);
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : 'Gagal menyimpan produk.'
+    );
+  } finally {
+    setSaving(false);
+  }
+};
+
+
+const cancelEdit = () => {
+  setEditingMenu(null);
+  setName('');
+  setCategory('makanan');
+  setPrice('');
+  setDescription('');
+  setSelectedFile(null);
+  setExistingImageUrl('');
+  setError('');
+};
   const toggleAvailability = async (menu: MenuItem) => {
     try {
       await updateDoc(doc(db, 'menu_items', menu.id), {
@@ -187,7 +211,9 @@ try {
         </p>
 
         <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
-          <h2 className="mb-4 text-lg font-bold">Tambah Menu</h2>
+          <h2 className="mb-4 text-lg font-bold">
+  {editingMenu ? 'Edit Produk' : 'Tambah Menu'}
+</h2>
 
           <input
             value={name}
@@ -234,19 +260,22 @@ try {
               className="w-full text-sm"
             />
 
-            {previewUrl && (
+            {(previewUrl || existingImageUrl) && (
               <div className="mt-3">
                 <p className="mb-2 text-sm text-gray-500">
                   Pratinjau foto:
                 </p>
                 <img
-                  src={previewUrl}
+                  src={previewUrl || existingImageUrl}
                   alt="Pratinjau produk"
                   className="h-40 w-full rounded-xl object-cover"
                 />
                 <button
                   type="button"
-                  onClick={() => setSelectedFile(null)}
+                  onClick={() => {
+  setSelectedFile(null);
+  setExistingImageUrl('');
+}}
                   className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700"
                 >
                   Hapus Foto
@@ -262,12 +291,26 @@ try {
           )}
 
           <button
-            onClick={addMenu}
-            disabled={saving}
-            className="w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:opacity-50"
-          >
-            {saving ? 'Mengunggah dan Menyimpan...' : 'Simpan Produk'}
-          </button>
+  onClick={addMenu}
+  disabled={saving}
+  className="w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:opacity-50"
+>
+  {saving
+    ? 'Menyimpan...'
+    : editingMenu
+      ? 'Simpan Perubahan'
+      : 'Simpan Produk'}
+</button>
+
+{editingMenu && (
+  <button
+    type="button"
+    onClick={cancelEdit}
+    className="mt-2 w-full rounded-xl bg-gray-200 py-3 font-bold text-gray-700"
+  >
+    Batal Edit
+  </button>
+)}
         </section>
 
         <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
@@ -304,6 +347,12 @@ try {
                 <button
                   onClick={() => toggleAvailability(menu)}
                   className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold"
+                  <button
+  onClick={() => startEdit(menu)}
+  className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
+>
+  Edit
+</button>
                 >
                   Ubah Status
                 </button>
