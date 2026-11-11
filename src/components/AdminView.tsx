@@ -9,6 +9,7 @@ import {
   doc
 } from 'firebase/firestore';
 import { db } from '../firebase';
+import { getAuth } from 'firebase/auth';
 import type { MenuItem } from '../types';
 
 const rupiah = (value: number) =>
