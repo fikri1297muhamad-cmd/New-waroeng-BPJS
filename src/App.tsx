@@ -264,7 +264,7 @@ useEffect(() => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {filteredMenus.map((item) => (
             <article
               key={item.id}
@@ -274,7 +274,7 @@ useEffect(() => {
                 <img
                   src={item.image_url}
                   alt={item.name}
-                  className="h-44 w-full object-cover"
+                  className="flex h-24 items-center justify-center bg-green-50 text-3xl sm:h-36"
                 />
               ) : (
                 <div className="flex h-44 items-center justify-center bg-green-50 text-5xl">
