@@ -29,6 +29,8 @@ export default function AdminView() {
   const [previewUrl, setPreviewUrl] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [seedingTables, setSeedingTables] = useState(false);
+const [seedMessage, setSeedMessage] = useState('');
 const [editingMenu, setEditingMenu] = useState<MenuItem | null>(null);
 const [existingImageUrl, setExistingImageUrl] = useState('');
   useEffect(() => {
