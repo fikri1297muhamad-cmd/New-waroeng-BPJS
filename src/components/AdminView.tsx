@@ -372,3 +372,8 @@ const cancelEdit = () => {
   </article>
 ))}
 
+        </section>
+      </div>
+    </main>
+  );
+}
