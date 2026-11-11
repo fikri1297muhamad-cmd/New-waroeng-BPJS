@@ -488,25 +488,7 @@ if (successOrder) {
           </div>
         )}
 
-        {successCode && (
-          <div className="mt-4 rounded-xl bg-green-100 p-4 text-green-900">
-            <h2 className="font-bold">
-              Pesanan berhasil disimpan!
-            </h2>
-            <p className="mt-2">
-              Kode pesanan: <strong>{successCode}</strong>
-            </p>
-            <p className="mt-2 text-sm">
-              Silakan lakukan pembayaran di kasir.
-            </p>
-            <button
-              onClick={() => setSuccessCode('')}
-              className="mt-3 rounded-lg bg-green-800 px-4 py-2 text-white"
-            >
-              Tutup
-            </button>
-          </div>
-        )}
+        
       </section>
 
       <Cart
