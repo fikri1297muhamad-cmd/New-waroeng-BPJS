@@ -292,9 +292,9 @@ useEffect(() => {
                   className="h-2/5 w-full object-cover"
                 />
               ) : (
-                <div className="flex min-h-0 flex-1 flex-col p-2">
-                  🍽️
-                </div>
+                <div className="flex h-2/5 w-full items-center justify-center bg-green-50 text-3xl">
+  🍽️
+</div>
               )}
 
               <div className="flex h-2/5 items-center justify-center bg-green-50 text-3xl">
