@@ -230,6 +230,108 @@ useEffect(() => {
   );
     }
 
+if (successOrder) {
+  return (
+    <main className="min-h-screen bg-amber-50 p-4">
+      <div className="mx-auto max-w-lg rounded-2xl bg-white p-5 shadow-lg">
+        <div className="text-center">
+          <img
+            src="/logo.png"
+            alt="Logo Waroeng BPJS"
+            className="mx-auto mb-3 h-24 w-24 object-contain"
+          />
+          <h1 className="text-2xl font-extrabold text-green-800">
+            WAROENG BPJS
+          </h1>
+          <p className="mt-2 text-xs text-gray-600">
+            Jl. Kandangsapi 001/002 No. 01,
+            Desa Tanjungsari, Kecamatan Sukaluyu,
+            Kabupaten Cianjur
+          </p>
+        </div>
+
+        <hr className="my-4" />
+
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <p className="text-gray-500">NO. MEJA</p>
+            <p className="font-bold">
+              Meja {String(successOrder.table).padStart(2, '0')}
+            </p>
+          </div>
+          <div>
+            <p className="text-gray-500">NAMA PEMESAN</p>
+            <p className="break-words font-bold">
+              {successOrder.name}
+            </p>
+          </div>
+        </div>
+
+        <hr className="my-4" />
+
+        <div className="text-center">
+          <p className="font-bold text-gray-700">NOMOR PESANAN</p>
+          <p className="mt-1 text-xl font-extrabold text-green-800">
+            {successOrder.orderCode}
+          </p>
+
+          <img
+            src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(successOrder.orderCode)}`}
+            alt="QR Pesanan"
+            className="mx-auto mt-3 h-44 w-44"
+          />
+          <p className="text-xs text-gray-500">
+            QR Code Pesanan
+          </p>
+        </div>
+
+        <hr className="my-4" />
+
+        <h2 className="mb-3 font-extrabold">RINCIAN PESANAN</h2>
+
+        {successOrder.items.map((item, index) => (
+          <div key={`${item.menu_id}-${index}`}
+            className="flex justify-between gap-3 border-b py-2 text-sm">
+            <div>
+              <p className="font-semibold">{item.item_name}</p>
+              <p className="text-gray-500">
+                {item.quantity} × {rupiah(item.item_price)}
+              </p>
+            </div>
+            <p className="font-bold">{rupiah(item.subtotal)}</p>
+          </div>
+        ))}
+
+        <div className="mt-4 flex justify-between text-lg font-extrabold">
+          <span>TOTAL</span>
+          <span className="text-green-800">
+            {rupiah(successOrder.total)}
+          </span>
+        </div>
+
+        <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm leading-relaxed text-green-900">
+          <strong>NOTE:</strong>
+          <p className="mt-2">
+            Silahkan lakukan pembayaran di kasir dengan menunjukkan
+            bukti pesanan atau screenshot pesanan ini kepada staf
+            kasir kami.
+          </p>
+          <p className="mt-4 text-center text-lg font-extrabold">
+            TERIMA KASIH
+          </p>
+        </div>
+
+        <button
+          onClick={() => setSuccessOrder(null)}
+          className="mt-5 w-full rounded-xl bg-green-800 py-3 font-bold text-white"
+        >
+          ← Kembali ke Halaman Utama Pelanggan
+        </button>
+      </div>
+    </main>
+  );
+}
+
   return (
     <main className="min-h-screen bg-amber-50 pb-80">
     <header className="bg-green-800 px-5 py-7 text-white">
