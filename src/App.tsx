@@ -340,7 +340,7 @@ useEffect(() => {
 
       <button
         onClick={() => addToCart(item)}
-        className="shrink-0 rounded-xl bg-orange-500 px-3 py-3 text-xs font-bold text-white shadow-sm hover:bg-orange-600 sm:px-4"
+        className="shrink-0 rounded-lg bg-orange-500 px-2 py-2 text-[10px] font-bold text-white shadow-sm hover:bg-orange-600 sm:px-3 sm:py-2"
       >
         + Pesan
       </button>
