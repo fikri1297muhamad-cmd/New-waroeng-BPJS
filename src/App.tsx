@@ -285,40 +285,42 @@ useEffect(() => {
   key={item.id}
   className="flex aspect-square flex-col overflow-hidden rounded-xl bg-white shadow-sm"
 >
-              {item.image_url ? (
-                <img
-                  src={item.image_url}
-                  alt={item.name}
-                  className="h-2/5 w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-2/5 w-full items-center justify-center bg-green-50 text-3xl">
-  🍽️
+              
+{item.image_url ? (
+  <img
+    src={item.image_url}
+    alt={item.name}
+    className="h-2/5 w-full object-cover"
+  />
+) : (
+  <div className="flex h-2/5 w-full items-center justify-center bg-green-50 text-3xl">
+    🍽️
+  </div>
+)}
+
+<div className="flex min-h-0 flex-1 flex-col p-2">
+  <h3 className="line-clamp-2 text-xs font-bold text-gray-800 sm:text-sm">
+    {item.name}
+  </h3>
+
+  {item.description && (
+    <p className="mt-1 line-clamp-2 overflow-hidden text-[10px] leading-tight text-gray-500 sm:text-xs">
+      {item.description}
+    </p>
+  )}
+
+  <p className="mt-auto pt-1 text-xs font-bold text-green-800 sm:text-sm">
+    {rupiah(Number(item.price) || 0)}
+  </p>
+
+  <button
+    onClick={() => addToCart(item)}
+    className="mt-1 w-full rounded-lg bg-green-800 py-1.5 text-[10px] font-semibold text-white sm:text-xs"
+  >
+    + Tambah
+  </button>
 </div>
-              )}
 
-              <div className="flex h-2/5 items-center justify-center bg-green-50 text-3xl">
-                <h3 className="font-bold text-gray-800">
-                  {item.name}
-                </h3>
-
-                {item.description && (
-                  <p className="mt-1 line-clamp-2 overflow-hidden text-[10px] leading-tight text-gray-500 sm:text-xs">
-  {item.description}
-</p>
-                )}
-
-                <p className="mt-auto pt-1 text-xs font-bold text-green-800 sm:text-sm">
-  {rupiah(Number(item.price) || 0)}
-</p>
-
-                <button
-  onClick={() => addToCart(item)}
-  className="mt-1 w-full rounded-lg bg-green-800 py-1.5 text-[10px] font-semibold text-white sm:text-xs"
->
-  + Tambah
-</button>
-              </div>
             </article>
           ))}
         </div>
