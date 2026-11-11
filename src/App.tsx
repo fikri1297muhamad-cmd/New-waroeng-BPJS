@@ -304,9 +304,17 @@ useEffect(() => {
       </div>
     )}
 
-    <span className="absolute left-2 top-2 rounded-lg bg-black/70 px-3 py-1 text-[10px] font-semibold text-white sm:text-xs">
-      {item.category}
-    </span>
+    {pressedMenuId === item.id && item.description && (
+  <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-black/80 p-3">
+    <p className="text-xs leading-relaxed text-white sm:text-sm">
+      {item.description}
+    </p>
+  </div>
+)}
+
+<span className="absolute left-2 top-2 rounded-lg bg-black/70 px-3 py-1 text-[10px] font-semibold text-white sm:text-xs">
+  {item.category}
+</span>
   </div>
 
   <div className="p-3">
