@@ -10,9 +10,10 @@ import type { StaffRole } from '../types';
 
 type Props = {
   onLogin: (name: string, role: StaffRole) => void;
+  onBack: () => void;
 };
 
-export default function StaffLogin({ onLogin }: Props) {
+export default function StaffLogin({ onLogin, onBack }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [adminCode, setAdminCode] = useState('');
