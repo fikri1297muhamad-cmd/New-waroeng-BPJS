@@ -16,6 +16,7 @@ type Props = {
 export default function StaffLogin({ onLogin, onBack }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [adminCode, setAdminCode] = useState('');
   const [adminName, setAdminName] = useState('');
   const [step, setStep] = useState<'login' | 'admin-code'>('login');
