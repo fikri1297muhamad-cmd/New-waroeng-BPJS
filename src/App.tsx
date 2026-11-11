@@ -32,7 +32,17 @@ const rupiah = (price: number) =>
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<CartItem[]>(() => {
+  try {
+    const savedCart = localStorage.getItem('waroeng_bpjs_cart');
+
+    return savedCart
+      ? JSON.parse(savedCart) as CartItem[]
+      : [];
+  } catch {
+    return [];
+  }
+});
   const [category, setCategory] = useState('semua');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,7 +55,12 @@ export default function App() {
   const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
   const [staffName, setStaffName] = useState('');
   const [showStaffLogin, setShowStaffLogin] = useState(false);
-
+useEffect(() => {
+  localStorage.setItem(
+    'waroeng_bpjs_cart',
+    JSON.stringify(cart)
+  );
+}, [cart]);
   const handleStaffLogin = (name: string, role: StaffRole) => {
     setStaffName(name);
     setStaffRole(role);
