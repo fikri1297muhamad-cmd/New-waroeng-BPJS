@@ -1,18 +1,26 @@
 import { useState } from 'react';
 
 type Props = {
+  tableNumber: number | null;
   onSubmit: (name: string, table: number) => void;
 };
 
-export default function CustomerForm({ onSubmit }: Props) {
+export default function CustomerForm({
+  tableNumber,
+  onSubmit
+}: Props) {
   const [name, setName] = useState('');
-  const [table, setTable] = useState('');
 
   const validName = /^[A-Za-z ]+$/.test(name.trim());
 
   const handleSubmit = () => {
-    if (!table || !name.trim()) {
-      alert('Nomor meja dan nama pemesan wajib diisi.');
+    if (!tableNumber) {
+      alert('Silakan pindai QR meja terlebih dahulu.');
+      return;
+    }
+
+    if (!name.trim()) {
+      alert('Nama pemesan wajib diisi.');
       return;
     }
 
@@ -21,7 +29,7 @@ export default function CustomerForm({ onSubmit }: Props) {
       return;
     }
 
-    onSubmit(name.trim(), Number(table));
+    onSubmit(name.trim(), tableNumber);
   };
 
   return (
@@ -31,21 +39,20 @@ export default function CustomerForm({ onSubmit }: Props) {
       </h2>
 
       <label className="mb-2 block text-sm font-semibold">
-        Nomor Meja (01–50) *
+        Nomor Meja
       </label>
 
-      <select
-        value={table}
-        onChange={(e) => setTable(e.target.value)}
-        className="mb-4 w-full rounded-xl border p-3"
-      >
-        <option value="">Pilih nomor meja</option>
-        {Array.from({ length: 50 }, (_, i) => (
-          <option key={i + 1} value={i + 1}>
-            Meja {String(i + 1).padStart(2, '0')}
-          </option>
-        ))}
-      </select>
+      <div className="mb-4 rounded-xl border bg-gray-50 p-3">
+        {tableNumber ? (
+          <span className="font-bold text-green-800">
+            Meja {String(tableNumber).padStart(2, '0')}
+          </span>
+        ) : (
+          <span className="text-sm text-red-600">
+            Belum terhubung. Silakan pindai QR meja.
+          </span>
+        )}
+      </div>
 
       <label className="mb-2 block text-sm font-semibold">
         Nama Pemesan *
@@ -56,15 +63,18 @@ export default function CustomerForm({ onSubmit }: Props) {
         value={name}
         onChange={(e) => setName(e.target.value)}
         placeholder="Masukkan nama pemesan"
+        maxLength={80}
         className="w-full rounded-xl border p-3"
       />
 
       <button
         onClick={handleSubmit}
-        className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white"
+        disabled={!tableNumber}
+        className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
       >
         Lanjutkan Pesanan
       </button>
     </section>
   );
-      }
+}
+
