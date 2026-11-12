@@ -2,8 +2,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { randomBytes, createHash } from 'node:crypto';
+import {
+  getFirestore,
+  FieldValue
+} from 'firebase-admin/firestore';
+import {
+  randomBytes,
+  createHash,
+  createCipheriv,
+  createDecipheriv
+} from 'node:crypto';
 
 function getAdminApp() {
   const existingApp = getApps().find(
@@ -15,13 +23,13 @@ function getAdminApp() {
   const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
 
   if (!serviceAccount) {
-    throw new Error('Firebase service account belum dikonfigurasi.');
+    throw new Error('FIREBASE_CONFIG_MISSING');
   }
 
   const credentials = JSON.parse(serviceAccount);
 
   if (credentials.project_id !== 'waroeng-bpjs') {
-    throw new Error('Firebase Project ID tidak sesuai.');
+    throw new Error('FIREBASE_PROJECT_MISMATCH');
   }
 
   return initializeApp({
@@ -30,13 +38,109 @@ function getAdminApp() {
   });
 }
 
+function getEncryptionKey(): Buffer {
+  const value = process.env.TABLE_QR_ENCRYPTION_KEY;
+
+  if (!value) {
+    throw new Error('QR_ENCRYPTION_KEY_MISSING');
+  }
+
+  const key = Buffer.from(value, 'base64');
+
+  if (
+    key.length !== 32 ||
+    key.toString('base64') !== value
+  ) {
+    throw new Error('QR_ENCRYPTION_KEY_INVALID');
+  }
+
+  return key;
+}
+
+function hashToken(token: string): string {
+  return createHash('sha256')
+    .update(token)
+    .digest('hex');
+}
+
+function encryptToken(token: string, key: Buffer) {
+  const iv = randomBytes(12);
+
+  const cipher = createCipheriv(
+    'aes-256-gcm',
+    key,
+    iv
+  );
+
+  const encrypted = Buffer.concat([
+    cipher.update(token, 'utf8'),
+    cipher.final()
+  ]);
+
+  return {
+    token_hash: hashToken(token),
+    token_ciphertext: encrypted.toString('base64'),
+    token_iv: iv.toString('base64'),
+    token_auth_tag: cipher.getAuthTag().toString('base64'),
+    token_version: 1
+  };
+}
+
+function decryptToken(data: FirebaseFirestore.DocumentData, key: Buffer) {
+  if (
+    data.token_version !== 1 ||
+    typeof data.token_ciphertext !== 'string' ||
+    typeof data.token_iv !== 'string' ||
+    typeof data.token_auth_tag !== 'string' ||
+    typeof data.token_hash !== 'string'
+  ) {
+    throw new Error('QR_TOKEN_DATA_INVALID');
+  }
+
+  const iv = Buffer.from(data.token_iv, 'base64');
+  const ciphertext = Buffer.from(
+    data.token_ciphertext,
+    'base64'
+  );
+  const authTag = Buffer.from(
+    data.token_auth_tag,
+    'base64'
+  );
+
+  if (iv.length !== 12 || authTag.length !== 16) {
+    throw new Error('QR_TOKEN_DATA_INVALID');
+  }
+
+  const decipher = createDecipheriv(
+    'aes-256-gcm',
+    key,
+    iv
+  );
+
+  decipher.setAuthTag(authTag);
+
+  const decrypted = Buffer.concat([
+    decipher.update(ciphertext),
+    decipher.final()
+  ]).toString('utf8');
+
+  if (hashToken(decrypted) !== data.token_hash) {
+    throw new Error('QR_TOKEN_DATA_INVALID');
+  }
+
+  return decrypted;
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.setHeader('Pragma', 'no-cache');
 
   if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+
     return res.status(405).json({
       success: false,
       error: 'Metode tidak diizinkan.'
@@ -47,8 +151,10 @@ export default async function handler(
     const app = getAdminApp();
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const encryptionKey = getEncryptionKey();
 
     const authorization = req.headers.authorization || '';
+
     const token = authorization.startsWith('Bearer ')
       ? authorization.slice(7)
       : '';
@@ -60,7 +166,7 @@ export default async function handler(
       });
     }
 
-    const decoded = await auth.verifyIdToken(token);
+    const decoded = await auth.verifyIdToken(token, true);
     const userId = decoded.uid;
 
     const profile = await db
@@ -68,7 +174,14 @@ export default async function handler(
       .doc(userId)
       .get();
 
-    if (!profile.exists || profile.data()?.role !== 'admin') {
+    const role = String(
+      profile.data()?.role || ''
+    ).trim().toLowerCase();
+
+    if (
+      !profile.exists ||
+      !['admin', 'admin 01'].includes(role)
+    ) {
       return res.status(403).json({
         success: false,
         error: 'Akses Admin ditolak.'
@@ -93,7 +206,8 @@ export default async function handler(
 
     if (
       decoded.adminAccess !== true ||
-      Number(decoded.adminAccessUntil || 0) <= Math.floor(now / 1000) ||
+      Number(decoded.adminAccessUntil || 0) <=
+        Math.floor(now / 1000) ||
       !validSession
     ) {
       return res.status(403).json({
@@ -105,69 +219,155 @@ export default async function handler(
     const tablesRef = db.collection('restaurant_tables');
     const qrRef = db.collection('table_qr_tokens');
 
-    const results = await Promise.all(
-      Array.from({ length: 50 }, async (_, index) => {
-        const tableNumber = index + 1;
-        const tableId = `Meja ${String(tableNumber).padStart(2, '0')}`;
+    const rateLimitRef = db
+      .collection('table_qr_api_limits')
+      .doc(userId);
 
-        const tableDoc = tablesRef.doc(tableId);
-        const qrDoc = qrRef.doc(tableId);
+    const auditRef = db
+      .collection('table_qr_audit')
+      .doc();
 
-        const newToken = randomBytes(32).toString('base64url');
+    // Token dibuat sekali di luar transaksi.
+    // Jika transaksi diulang oleh Firestore,
+    // token yang digunakan tetap sama.
+    const generatedTokens = Array.from(
+      { length: 50 },
+      () => randomBytes(32).toString('base64url')
+    );
 
-        const tokenHash = createHash('sha256')
-          .update(newToken)
-          .digest('hex');
+    const results = await db.runTransaction(
+      async transaction => {
+        const rateLimitSnapshot = await transaction.get(
+          rateLimitRef
+        );
 
-        return db.runTransaction(async transaction => {
+        const lastRequest = rateLimitSnapshot.data()?.last_request_at;
+
+        if (
+          lastRequest &&
+          typeof lastRequest.toMillis === 'function' &&
+          now - lastRequest.toMillis() < 30000
+        ) {
+          throw new Error('QR_RATE_LIMITED');
+        }
+
+        const tableSnapshots = [];
+        const qrSnapshots = [];
+
+        // Semua pembacaan dilakukan sebelum penulisan.
+        for (let index = 0; index < 50; index++) {
+          const number = index + 1;
+          const tableId = `Meja ${String(number).padStart(2, '0')}`;
+
+          const tableDoc = tablesRef.doc(tableId);
+          const qrDoc = qrRef.doc(tableId);
+
           const tableSnapshot = await transaction.get(tableDoc);
           const qrSnapshot = await transaction.get(qrDoc);
 
-          if (!tableSnapshot.exists) {
-            throw new Error(`${tableId}_TIDAK_DITEMUKAN`);
-          }
-
-          if (tableSnapshot.data()?.is_active !== true) {
-            throw new Error(`${tableId}_TIDAK_AKTIF`);
-          }
-
-          if (qrSnapshot.exists) {
-            return {
-              tableNumber,
-              created: false
-            };
-          }
-
-          transaction.create(qrDoc, {
-            table_number: tableNumber,
-            token_hash: tokenHash,
-            is_active: true,
-            created_at: FieldValue.serverTimestamp(),
-            created_by: userId
+          tableSnapshots.push({
+            number,
+            tableId,
+            tableSnapshot,
+            qrSnapshot,
+            qrDoc
           });
+        }
 
-          return {
-            tableNumber,
-            created: true,
-            qrToken: newToken
-          };
+        const output = [];
+
+        // Periksa semua meja sebelum menulis dokumen apa pun.
+        for (const item of tableSnapshots) {
+          const tableData = item.tableSnapshot.data();
+
+          if (!item.tableSnapshot.exists) {
+            throw new Error(`${item.tableId}_TIDAK_DITEMUKAN`);
+          }
+
+          if (
+            tableData?.is_active !== true ||
+            Number(tableData?.table_number) !== item.number
+          ) {
+            throw new Error(`${item.tableId}_TIDAK_AKTIF`);
+          }
+
+          if (item.qrSnapshot.exists) {
+            const qrData = item.qrSnapshot.data();
+
+            if (
+              qrData?.is_active !== true ||
+              Number(qrData?.table_number) !== item.number
+            ) {
+              throw new Error('QR_TOKEN_DATA_INVALID');
+            }
+
+            const existingToken = decryptToken(
+              qrData,
+              encryptionKey
+            );
+
+            output.push({
+              tableNumber: item.number,
+              token: existingToken,
+              created: false
+            });
+          } else {
+            const newToken = generatedTokens[item.number - 1];
+
+            output.push({
+              tableNumber: item.number,
+              token: newToken,
+              created: true
+            });
+          }
+        }
+
+        // Semua validasi selesai. Baru lakukan penulisan.
+        for (const item of tableSnapshots) {
+          if (!item.qrSnapshot.exists) {
+            const newToken = generatedTokens[item.number - 1];
+
+            transaction.create(item.qrDoc, {
+              table_number: item.number,
+              ...encryptToken(newToken, encryptionKey),
+              is_active: true,
+              created_at: FieldValue.serverTimestamp(),
+              created_by: userId
+            });
+          }
+        }
+
+        const createdCount = output.filter(
+          item => item.created
+        ).length;
+
+        transaction.set(rateLimitRef, {
+          last_request_at: FieldValue.serverTimestamp()
         });
-      })
-    );
 
-    const created = results.filter(item => item.created);
-    const alreadyExists = results.length - created.length;
+        transaction.create(auditRef, {
+          action: 'generate_or_recover_table_qr',
+          user_id: userId,
+          total_tables: 50,
+          created_count: createdCount,
+          recovered_count: 50 - createdCount,
+          created_at: FieldValue.serverTimestamp()
+        });
+
+        return output;
+      }
+    );
 
     return res.status(200).json({
       success: true,
-      message: 'Pembuatan QR meja selesai.',
+      message: 'QR meja berhasil disiapkan.',
       totalTables: 50,
-      created: created.length,
-      alreadyExists,
-      qrTokens: created.map(item => ({
+      created: results.filter(item => item.created).length,
+      recovered: results.filter(item => !item.created).length,
+      qrTokens: results.map(item => ({
         tableNumber: item.tableNumber,
         tableName: `Meja ${String(item.tableNumber).padStart(2, '0')}`,
-        token: item.qrToken
+        token: item.token
       }))
     });
 
@@ -177,23 +377,51 @@ export default async function handler(
     const message =
       error instanceof Error ? error.message : '';
 
+    if (message === 'QR_RATE_LIMITED') {
+      return res.status(429).json({
+        success: false,
+        error: 'Tunggu 30 detik sebelum meminta token QR kembali.'
+      });
+    }
+
     if (message.endsWith('_TIDAK_DITEMUKAN')) {
       return res.status(400).json({
         success: false,
-        error: `Data ${message.replace('_TIDAK_DITEMUKAN', '')} belum tersedia.`
+        error: 'Ada data meja yang belum tersedia.'
       });
     }
 
     if (message.endsWith('_TIDAK_AKTIF')) {
       return res.status(400).json({
         success: false,
-        error: `Data ${message.replace('_TIDAK_AKTIF', '')} sedang tidak aktif.`
+        error: 'Ada meja yang belum aktif atau datanya tidak sesuai.'
+      });
+    }
+
+    if (message === 'QR_ENCRYPTION_KEY_MISSING') {
+      return res.status(500).json({
+        success: false,
+        error: 'Kunci enkripsi QR belum dikonfigurasi.'
+      });
+    }
+
+    if (message === 'QR_ENCRYPTION_KEY_INVALID') {
+      return res.status(500).json({
+        success: false,
+        error: 'Konfigurasi kunci enkripsi QR tidak valid.'
+      });
+    }
+
+    if (message === 'QR_TOKEN_DATA_INVALID') {
+      return res.status(500).json({
+        success: false,
+        error: 'Data QR lama tidak valid atau tidak dapat dipulihkan. Perlu pemeriksaan Admin.'
       });
     }
 
     return res.status(500).json({
       success: false,
-      error: 'Gagal membuat QR meja.'
+      error: 'Gagal menyiapkan QR meja. Periksa konfigurasi server.'
     });
   }
 }
