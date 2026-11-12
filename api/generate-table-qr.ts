@@ -289,13 +289,12 @@ export default async function handler(
         const output = [];
 
         // Periksa semua meja sebelum menulis dokumen apa pun.
-        for (const item of tableSnapshots) {
-  if (!item.tableSnapshot.exists) {
-    throw new Error(`${item.tableId}_TIDAK_DITEMUKAN`);
-  }
+                for (const item of tableSnapshots) {
+          if (!item.tableSnapshot.exists) {
+            throw new Error(`${item.tableId}_TIDAK_DITEMUKAN`);
+          }
 
-  const tableData = item.tableSnapshot.data();
-
+          const tableData = item.tableSnapshot.data();
           if (
             tableData?.is_active !== true ||
             Number(tableData?.table_number) !== item.number
