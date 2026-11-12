@@ -384,7 +384,7 @@ export default async function handler(
     });
 
   } catch (error) {
-    console.error('Generate table QR error:', error);
+    console.error('Generate table QR error:', message);
 
     const message =
       error instanceof Error ? error.message : '';
