@@ -383,11 +383,11 @@ export default async function handler(
       }))
     });
 
-} catch (error) {
-  const message =
-    error instanceof Error ? error.message : '';
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : '';
 
-  console.error('Generate table QR error:', message);
+    console.error('Generate table QR error:', message);
 
     if (message === 'QR_RATE_LIMITED') {
       return res.status(429).json({
