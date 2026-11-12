@@ -479,7 +479,10 @@ if (successOrder) {
         </div>
 
         <div className="mt-8">
-          <CustomerForm onSubmit={startConfirmation} />
+          <CustomerForm
+  tableNumber={tableNumber || null}
+  onSubmit={startConfirmation}
+/>
         </div>
 
         {orderError && (
