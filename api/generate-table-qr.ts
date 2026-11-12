@@ -251,28 +251,40 @@ export default async function handler(
           throw new Error('QR_RATE_LIMITED');
         }
 
-        const tableSnapshots = [];
-        const qrSnapshots = [];
+        
+        // Siapkan referensi 50 meja dan 50 dokumen QR.
+        const tableRefs = Array.from(
+          { length: 50 },
+          (_, index) =>
+            tablesRef.doc(
+              `Meja ${String(index + 1).padStart(2, '0')}`
+            )
+        );
 
-        // Semua pembacaan dilakukan sebelum penulisan.
-        for (let index = 0; index < 50; index++) {
-          const number = index + 1;
-          const tableId = `Meja ${String(number).padStart(2, '0')}`;
+        const qrRefs = Array.from(
+          { length: 50 },
+          (_, index) =>
+            qrRef.doc(
+              `Meja ${String(index + 1).padStart(2, '0')}`
+            )
+        );
 
-          const tableDoc = tablesRef.doc(tableId);
-          const qrDoc = qrRef.doc(tableId);
+        // Baca seluruh 100 dokumen secara berkelompok.
+        const snapshots = await transaction.getAll(
+          ...tableRefs,
+          ...qrRefs
+        );
 
-          const tableSnapshot = await transaction.get(tableDoc);
-          const qrSnapshot = await transaction.get(qrDoc);
-
-          tableSnapshots.push({
-            number,
-            tableId,
-            tableSnapshot,
-            qrSnapshot,
-            qrDoc
-          });
-        }
+        // Susun kembali hasil pembacaan berdasarkan nomor meja.
+        const tableSnapshots = tableRefs.map(
+          (tableDoc, index) => ({
+            number: index + 1,
+            tableId: `Meja ${String(index + 1).padStart(2, '0')}`,
+            tableSnapshot: snapshots[index],
+            qrSnapshot: snapshots[index + 50],
+            qrDoc: qrRefs[index]
+          })
+        );
 
         const output = [];
 
