@@ -143,7 +143,7 @@ console.log(
 );
     const tableId = `Meja ${String(tableNumber).padStart(2, '0')}`;
 const tableRef = db.collection('restaurant_tables').doc(tableId);
-
+const ordersRef = db.collection('orders');
     const orderRef = db.collection('orders').doc();
     const orderCode =
       `WB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
@@ -158,6 +158,15 @@ const tableRef = db.collection('restaurant_tables').doc(tableId);
   tableId: tableId
 });
       const tableSnapshot = await transaction.get(tableRef);
+      const activeOrdersSnapshot = await transaction.get(
+  ordersRef
+    .where('table_number', '==', tableNumber)
+    .where('payment_status', '==', 'belum_lunas')
+);
+
+if (!activeOrdersSnapshot.empty) {
+  throw new Error('MEJA_SUDAH_DIPESAN');
+}
       console.log('HASIL BACA MEJA:', {
   exists: tableSnapshot.exists,
   path: tableSnapshot.ref.path
