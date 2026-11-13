@@ -1,10 +1,11 @@
+
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import StaffLogin from './components/StaffLogin';
 import AdminView from './components/AdminView';
 import KasirView from './components/KasirView';
 import type { StaffRole } from './types';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { listenToMenus, createOrder } from './services/firestore';
 import type { MenuItem } from './types';
 import Cart from './components/Cart';
@@ -33,76 +34,193 @@ const rupiah = (price: number) =>
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [pressedMenuId, setPressedMenuId] = useState<string | null>(null);
-  const [cart, setCart] = useState<CartItem[]>(() => {
-  try {
-    const savedCart = localStorage.getItem('waroeng_bpjs_cart');
 
-    return savedCart
-      ? JSON.parse(savedCart) as CartItem[]
-      : [];
-  } catch {
-    return [];
-  }
-});
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    try {
+      const savedCart = localStorage.getItem('waroeng_bpjs_cart');
+
+      return savedCart
+        ? JSON.parse(savedCart) as CartItem[]
+        : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [category, setCategory] = useState('semua');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [orderError, setOrderError] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [tableNumber, setTableNumber] = useState(0);
+
+  const [tableQrToken, setTableQrToken] = useState('');
+  const [tableQrVerified, setTableQrVerified] = useState(false);
+  const [tableQrChecking, setTableQrChecking] = useState(true);
+  const [tableQrMessage, setTableQrMessage] = useState(
+    'Memeriksa QR meja...'
+  );
+
+  const qrVerificationStarted = useRef(false);
+
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [sending, setSending] = useState(false);
+
   const [successOrder, setSuccessOrder] = useState<{
-  orderCode: string;
-  name: string;
-  table: number;
-  items: {
-    menu_id: string;
-    item_name: string;
-    item_price: number;
-    quantity: number;
-    subtotal: number;
-  }[];
-  total: number;
-} | null>(null);
+    orderCode: string;
+    name: string;
+    table: number;
+    items: {
+      menu_id: string;
+      item_name: string;
+      item_price: number;
+      quantity: number;
+      subtotal: number;
+    }[];
+    total: number;
+  } | null>(null);
+
   const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
   const [staffName, setStaffName] = useState('');
   const [showStaffLogin, setShowStaffLogin] = useState(false);
-useEffect(() => {
-  localStorage.setItem(
-    'waroeng_bpjs_cart',
-    JSON.stringify(cart)
-  );
-}, [cart]);
+
+  // Simpan keranjang pelanggan.
+  useEffect(() => {
+    localStorage.setItem(
+      'waroeng_bpjs_cart',
+      JSON.stringify(cart)
+    );
+  }, [cart]);
+
+  // Verifikasi QR meja dari alamat halaman.
+  useEffect(() => {
+    if (qrVerificationStarted.current) return;
+    qrVerificationStarted.current = true;
+
+    const verifyTableQr = async () => {
+      const currentUrl = new URL(window.location.href);
+
+      const tableParam = currentUrl.searchParams.get('table');
+      const tokenParam = currentUrl.searchParams.get('token');
+
+      // Hapus token dari alamat browser setelah dibaca.
+      if (tableParam !== null || tokenParam !== null) {
+        currentUrl.searchParams.delete('table');
+        currentUrl.searchParams.delete('token');
+
+        const remainingUrl =
+          currentUrl.pathname +
+          currentUrl.search +
+          currentUrl.hash;
+
+        window.history.replaceState({}, '', remainingUrl);
+      }
+
+      if (!tableParam || !tokenParam) {
+        setTableNumber(0);
+        setTableQrToken('');
+        setTableQrVerified(false);
+        setTableQrChecking(false);
+        setTableQrMessage(
+          'Silakan pindai QR meja untuk mulai memesan.'
+        );
+        return;
+      }
+
+      if (
+        !/^(0?[1-9]|[1-4][0-9]|50)$/.test(tableParam) ||
+        !/^[A-Za-z0-9_-]{43}$/.test(tokenParam)
+      ) {
+        setTableQrChecking(false);
+        setTableQrMessage(
+          'QR meja tidak valid. Silakan pindai ulang QR meja.'
+        );
+        return;
+      }
+
+      const requestedTable = Number(tableParam);
+
+      setTableNumber(0);
+      setTableQrToken('');
+      setTableQrVerified(false);
+      setTableQrChecking(true);
+      setTableQrMessage('Memverifikasi QR meja...');
+
+      try {
+        const response = await fetch('/api/verify-table-qr', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            table_number: requestedTable,
+            token: tokenParam
+          })
+        });
+
+        const result = await response.json();
+
+        if (
+          !response.ok ||
+          result?.success !== true ||
+          result?.verified !== true ||
+          Number(result?.table_number) !== requestedTable
+        ) {
+          throw new Error('QR meja tidak dapat diverifikasi.');
+        }
+
+        setTableNumber(requestedTable);
+        setTableQrToken(tokenParam);
+        setTableQrVerified(true);
+        setTableQrMessage(
+          `Meja ${String(requestedTable).padStart(2, '0')} berhasil diverifikasi.`
+        );
+      } catch (err) {
+        console.error('Verifikasi QR meja gagal:', err);
+
+        setTableNumber(0);
+        setTableQrToken('');
+        setTableQrVerified(false);
+        setTableQrMessage(
+          'QR meja tidak valid atau gagal diverifikasi. Silakan pindai ulang.'
+        );
+      } finally {
+        setTableQrChecking(false);
+      }
+    };
+
+    void verifyTableQr();
+  }, []);
+
   const handleStaffLogin = (name: string, role: StaffRole) => {
     setStaffName(name);
     setStaffRole(role);
     setShowStaffLogin(false);
   };
 
-const handleStaffLogout = async () => {
-  await signOut(auth);
-  setStaffRole(null);
-  setStaffName('');
-};
+  const handleStaffLogout = async () => {
+    await signOut(auth);
+    setStaffRole(null);
+    setStaffName('');
+  };
 
-useEffect(() => {
-  const unsubscribe = listenToMenus(
-    (data) => {
-      setMenus(data);
-      setLoading(false);
-      setError('');
-    },
-    (err) => {
-      console.error(err);
-      setError('Gagal menghubungkan menu ke Firebase.');
-      setLoading(false);
-    }
-  );
+  useEffect(() => {
+    const unsubscribe = listenToMenus(
+      (data) => {
+        setMenus(data);
+        setLoading(false);
+        setError('');
+      },
+      (err) => {
+        console.error(err);
+        setError('Gagal menghubungkan menu ke Firebase.');
+        setLoading(false);
+      }
+    );
 
-  return () => unsubscribe();
-}, []);
-
+    return () => unsubscribe();
+  }, []);
 
   const addToCart = (menu: MenuItem) => {
     setCart((current) => {
@@ -154,6 +272,20 @@ useEffect(() => {
   const startConfirmation = (name: string, table: number) => {
     setOrderError('');
 
+    if (!tableQrVerified || !tableQrToken) {
+      setOrderError(
+        'QR meja belum terverifikasi. Silakan pindai ulang QR meja.'
+      );
+      return;
+    }
+
+    if (table !== tableNumber) {
+      setOrderError(
+        'Nomor meja tidak sesuai dengan QR yang dipindai.'
+      );
+      return;
+    }
+
     if (cart.length === 0) {
       setOrderError('Silakan pilih menu terlebih dahulu.');
       return;
@@ -167,6 +299,14 @@ useEffect(() => {
   const submitOrder = async () => {
     if (sending) return;
 
+    if (!tableQrVerified || !tableQrToken) {
+      setOrderError(
+        'QR meja belum terverifikasi. Silakan pindai ulang QR meja.'
+      );
+      setShowConfirmation(false);
+      return;
+    }
+
     setSending(true);
     setOrderError('');
 
@@ -174,15 +314,17 @@ useEffect(() => {
       const result = await createOrder({
         customer_name: customerName,
         table_number: tableNumber,
+        table_qr_token: tableQrToken,
         items: orderItems,
         total_amount: total
       });
-            setSuccessOrder({
+
+      setSuccessOrder({
         orderCode: result.order_code,
         name: customerName,
         table: tableNumber,
         items: [...orderItems],
-        total: total
+        total
       });
 
       setCart([]);
@@ -197,6 +339,7 @@ useEffect(() => {
       setSending(false);
     }
   };
+
   if (staffRole) {
     return (
       <div>
@@ -221,130 +364,140 @@ useEffect(() => {
     );
   }
 
-    if (showStaffLogin) {
-  return (
-    <StaffLogin
-      onLogin={handleStaffLogin}
-      onBack={() => setShowStaffLogin(false)}
-    />
-  );
-    }
+  if (showStaffLogin) {
+    return (
+      <StaffLogin
+        onLogin={handleStaffLogin}
+        onBack={() => setShowStaffLogin(false)}
+      />
+    );
+  }
 
-if (successOrder) {
-  return (
-    <main className="min-h-screen bg-amber-50 p-4">
-      <div className="mx-auto max-w-lg rounded-2xl bg-white p-5 shadow-lg">
-        <div className="text-center">
-          <img
-            src="/logo.png"
-            alt="Logo Waroeng BPJS"
-            className="mx-auto mb-3 h-24 w-24 object-contain"
-          />
-          <h1 className="text-2xl font-extrabold text-green-800">
-            WAROENG BPJS
-          </h1>
-          <p className="mt-2 text-xs text-gray-600">
-            Jl. Kandangsapi 001/002 No. 01,
-            Desa Tanjungsari, Kecamatan Sukaluyu,
-            Kabupaten Cianjur
-          </p>
-        </div>
+  if (successOrder) {
+    return (
+      <main className="min-h-screen bg-amber-50 p-4">
+        <div className="mx-auto max-w-lg rounded-2xl bg-white p-5 shadow-lg">
+          <div className="text-center">
+            <img
+              src="/logo.png"
+              alt="Logo Waroeng BPJS"
+              className="mx-auto mb-3 h-24 w-24 object-contain"
+            />
 
-        <hr className="my-4" />
+            <h1 className="text-2xl font-extrabold text-green-800">
+              WAROENG BPJS
+            </h1>
 
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <p className="text-gray-500">NO. MEJA</p>
-            <p className="font-bold">
-              Meja {String(successOrder.table).padStart(2, '0')}
+            <p className="mt-2 text-xs text-gray-600">
+              Jl. Kandangsapi 001/002 No. 01,
+              Desa Tanjungsari, Kecamatan Sukaluyu,
+              Kabupaten Cianjur
             </p>
           </div>
-          <div>
-            <p className="text-gray-500">NAMA PEMESAN</p>
-            <p className="break-words font-bold">
-              {successOrder.name}
-            </p>
-          </div>
-        </div>
 
-        <hr className="my-4" />
+          <hr className="my-4" />
 
-        <div className="text-center">
-          <p className="font-bold text-gray-700">NOMOR PESANAN</p>
-          <p className="mt-1 text-xl font-extrabold text-green-800">
-            {successOrder.orderCode}
-          </p>
-
-          <img
-            src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(successOrder.orderCode)}`}
-            alt="QR Pesanan"
-            className="mx-auto mt-3 h-44 w-44"
-          />
-          <p className="text-xs text-gray-500">
-            QR Code Pesanan
-          </p>
-        </div>
-
-        <hr className="my-4" />
-
-        <h2 className="mb-3 font-extrabold">RINCIAN PESANAN</h2>
-
-        {successOrder.items.map((item, index) => (
-          <div key={`${item.menu_id}-${index}`}
-            className="flex justify-between gap-3 border-b py-2 text-sm">
+          <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <p className="font-semibold">{item.item_name}</p>
-              <p className="text-gray-500">
-                {item.quantity} × {rupiah(item.item_price)}
+              <p className="text-gray-500">NO. MEJA</p>
+              <p className="font-bold">
+                Meja {String(successOrder.table).padStart(2, '0')}
               </p>
             </div>
-            <p className="font-bold">{rupiah(item.subtotal)}</p>
+
+            <div>
+              <p className="text-gray-500">NAMA PEMESAN</p>
+              <p className="break-words font-bold">
+                {successOrder.name}
+              </p>
+            </div>
           </div>
-        ))}
 
-        <div className="mt-4 flex justify-between text-lg font-extrabold">
-          <span>TOTAL</span>
-          <span className="text-green-800">
-            {rupiah(successOrder.total)}
-          </span>
+          <hr className="my-4" />
+
+          <div className="text-center">
+            <p className="font-bold text-gray-700">NOMOR PESANAN</p>
+
+            <p className="mt-1 text-xl font-extrabold text-green-800">
+              {successOrder.orderCode}
+            </p>
+
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(successOrder.orderCode)}`}
+              alt="QR Pesanan"
+              className="mx-auto mt-3 h-44 w-44"
+            />
+
+            <p className="text-xs text-gray-500">
+              QR Code Pesanan
+            </p>
+          </div>
+
+          <hr className="my-4" />
+
+          <h2 className="mb-3 font-extrabold">RINCIAN PESANAN</h2>
+
+          {successOrder.items.map((item, index) => (
+            <div
+              key={`${item.menu_id}-${index}`}
+              className="flex justify-between gap-3 border-b py-2 text-sm"
+            >
+              <div>
+                <p className="font-semibold">{item.item_name}</p>
+                <p className="text-gray-500">
+                  {item.quantity} × {rupiah(item.item_price)}
+                </p>
+              </div>
+
+              <p className="font-bold">{rupiah(item.subtotal)}</p>
+            </div>
+          ))}
+
+          <div className="mt-4 flex justify-between text-lg font-extrabold">
+            <span>TOTAL</span>
+            <span className="text-green-800">
+              {rupiah(successOrder.total)}
+            </span>
+          </div>
+
+          <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm leading-relaxed text-green-900">
+            <strong>NOTE:</strong>
+
+            <p className="mt-2">
+              Silahkan lakukan pembayaran di kasir dengan menunjukkan
+              bukti pesanan atau screenshot pesanan ini kepada staf
+              kasir kami.
+            </p>
+
+            <p className="mt-4 text-center text-lg font-extrabold">
+              TERIMA KASIH
+            </p>
+          </div>
+
+          <button
+            onClick={() => setSuccessOrder(null)}
+            className="mt-5 w-full rounded-xl bg-green-800 py-3 font-bold text-white"
+          >
+            ← Kembali ke Halaman Utama Pelanggan
+          </button>
         </div>
-
-        <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm leading-relaxed text-green-900">
-          <strong>NOTE:</strong>
-          <p className="mt-2">
-            Silahkan lakukan pembayaran di kasir dengan menunjukkan
-            bukti pesanan atau screenshot pesanan ini kepada staf
-            kasir kami.
-          </p>
-          <p className="mt-4 text-center text-lg font-extrabold">
-            TERIMA KASIH
-          </p>
-        </div>
-
-        <button
-          onClick={() => setSuccessOrder(null)}
-          className="mt-5 w-full rounded-xl bg-green-800 py-3 font-bold text-white"
-        >
-          ← Kembali ke Halaman Utama Pelanggan
-        </button>
-      </div>
-    </main>
-  );
-}
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-amber-50 pb-80">
-    <header className="bg-green-800 px-5 py-7 text-white">
-  <div className="mx-auto max-w-5xl">
-        <img
-      src="/logo.png"
-      alt="Logo Waroeng BPJS"
-      className="mb-4 h-32 w-32 object-contain"
-    />
+      <header className="bg-green-800 px-5 py-7 text-white">
+        <div className="mx-auto max-w-5xl">
+          <img
+            src="/logo.png"
+            alt="Logo Waroeng BPJS"
+            className="mb-4 h-32 w-32 object-contain"
+          />
 
-    <h1 className="text-3xl font-extrabold">
-      WAROENG BPJS
-    </h1>
+          <h1 className="text-3xl font-extrabold">
+            WAROENG BPJS
+          </h1>
 
           <p className="mt-2 text-sm text-green-100">
             Nikmat & Pas di Kantong
@@ -364,8 +517,6 @@ if (successOrder) {
           </button>
         </div>
       </header>
-
-
 
       <section className="mx-auto max-w-5xl px-4 py-6">
         <h2 className="mb-4 text-xl font-bold">
@@ -408,81 +559,103 @@ if (successOrder) {
 
         <div className="grid grid-cols-2 gap-3 sm:gap-5">
           {filteredMenus.map((item) => (
-            
-<article
-  key={item.id}
-  className="overflow-hidden rounded-2xl bg-white shadow-md"
->
-  <div
-  className="relative aspect-[4/3] w-full bg-green-50"
-  onTouchStart={() => setPressedMenuId(item.id)}
-  onTouchEnd={() => setPressedMenuId(null)}
-  onTouchCancel={() => setPressedMenuId(null)}
->
-    {item.image_url ? (
-      <img
-        src={item.image_url}
-        alt={item.name}
-        className="h-full w-full object-cover"
-      />
-    ) : (
-      <div className="flex h-full items-center justify-center text-5xl">
-        🍽️
-      </div>
-    )}
+            <article
+              key={item.id}
+              className="overflow-hidden rounded-2xl bg-white shadow-md"
+            >
+              <div
+                className="relative aspect-[4/3] w-full bg-green-50"
+                onTouchStart={() => setPressedMenuId(item.id)}
+                onTouchEnd={() => setPressedMenuId(null)}
+                onTouchCancel={() => setPressedMenuId(null)}
+              >
+                {item.image_url ? (
+                  <img
+                    src={item.image_url}
+                    alt={item.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-5xl">
+                    🍽️
+                  </div>
+                )}
 
-    {pressedMenuId === item.id && item.description && (
-  <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-black/80 p-3">
-    <p className="text-xs leading-relaxed text-white sm:text-sm">
-      {item.description}
-    </p>
-  </div>
-)}
+                {pressedMenuId === item.id && item.description && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center overflow-y-auto bg-black/80 p-3">
+                    <p className="text-xs leading-relaxed text-white sm:text-sm">
+                      {item.description}
+                    </p>
+                  </div>
+                )}
 
-<span className="absolute left-2 top-2 rounded-lg bg-black/70 px-3 py-1 text-[10px] font-semibold text-white sm:text-xs">
-  {item.category}
-</span>
-  </div>
+                <span className="absolute left-2 top-2 rounded-lg bg-black/70 px-3 py-1 text-[10px] font-semibold text-white sm:text-xs">
+                  {item.category}
+                </span>
+              </div>
 
-  <div className="p-3">
-    <h3 className="line-clamp-2 min-h-10 text-sm font-bold text-gray-900 sm:text-base">
-      {item.name}
-    </h3>
+              <div className="p-3">
+                <h3 className="line-clamp-2 min-h-10 text-sm font-bold text-gray-900 sm:text-base">
+                  {item.name}
+                </h3>
 
-    {item.description && (
-      <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-relaxed text-gray-500 sm:text-sm">
-        {item.description}
-      </p>
-    )}
+                {item.description && (
+                  <p className="mt-1 line-clamp-2 min-h-10 text-xs leading-relaxed text-gray-500 sm:text-sm">
+                    {item.description}
+                  </p>
+                )}
 
-    <div className="mt-3 flex items-end justify-between gap-2 border-t border-gray-100 pt-3">
-      <div className="min-w-0">
-        <p className="text-[10px] text-gray-400 sm:text-xs">
-          HARGA
-        </p>
-        <p className="text-sm font-extrabold text-amber-700 sm:text-base">
-          {rupiah(Number(item.price) || 0)}
-        </p>
-      </div>
+                <div className="mt-3 flex items-end justify-between gap-2 border-t border-gray-100 pt-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] text-gray-400 sm:text-xs">
+                      HARGA
+                    </p>
 
-      <button
-        onClick={() => addToCart(item)}
-        className="shrink-0 rounded-lg bg-orange-500 px-2 py-2 text-[10px] font-bold text-white shadow-sm hover:bg-orange-600 sm:px-3 sm:py-2"
-      >
-        + Pesan
-      </button>
-    </div>
-  </div>
-</article>
+                    <p className="text-sm font-extrabold text-amber-700 sm:text-base">
+                      {rupiah(Number(item.price) || 0)}
+                    </p>
+                  </div>
 
+                  <button
+                    onClick={() => addToCart(item)}
+                    className="shrink-0 rounded-lg bg-orange-500 px-2 py-2 text-[10px] font-bold text-white shadow-sm hover:bg-orange-600 sm:px-3 sm:py-2"
+                  >
+                    + Pesan
+                  </button>
+                </div>
+              </div>
+            </article>
           ))}
         </div>
 
         <div className="mt-8">
+          <div className="mb-4 rounded-xl border border-green-200 bg-white p-4">
+            <p className="font-bold text-gray-800">
+              STATUS QR MEJA
+            </p>
+
+            <p
+              className={`mt-2 text-sm ${
+                tableQrVerified
+                  ? 'font-semibold text-green-700'
+                  : 'text-gray-600'
+              }`}
+            >
+              {tableQrMessage}
+            </p>
+
+            {tableQrChecking && (
+              <p className="mt-2 text-xs text-gray-500">
+                Mohon tunggu, sistem sedang memeriksa QR.
+              </p>
+            )}
+          </div>
+
           <CustomerForm
-  tableNumber={tableNumber || null}
-  onSubmit={startConfirmation}
-/>
+            tableNumber={tableNumber || null}
+            tableQrVerified={tableQrVerified}
+            onSubmit={startConfirmation}
+          />
         </div>
 
         {orderError && (
@@ -490,8 +663,6 @@ if (successOrder) {
             {orderError}
           </div>
         )}
-
-        
       </section>
 
       <Cart
