@@ -1,21 +1,31 @@
+
 import { useState } from 'react';
 
 type Props = {
   tableNumber: number | null;
+  tableQrVerified?: boolean;
   onSubmit: (name: string, table: number) => void;
 };
 
 export default function CustomerForm({
   tableNumber,
+  tableQrVerified = false,
   onSubmit
 }: Props) {
   const [name, setName] = useState('');
 
   const validName = /^[A-Za-z ]+$/.test(name.trim());
+  const validTable = Boolean(
+    tableNumber &&
+    Number.isInteger(tableNumber) &&
+    tableNumber >= 1 &&
+    tableNumber <= 50 &&
+    tableQrVerified
+  );
 
   const handleSubmit = () => {
-    if (!tableNumber) {
-      alert('Silakan pindai QR meja terlebih dahulu.');
+    if (!validTable || !tableNumber) {
+      alert('Silakan pindai QR meja yang valid terlebih dahulu.');
       return;
     }
 
@@ -43,13 +53,14 @@ export default function CustomerForm({
       </label>
 
       <div className="mb-4 rounded-xl border bg-gray-50 p-3">
-        {tableNumber ? (
+        {validTable ? (
           <span className="font-bold text-green-800">
             Meja {String(tableNumber).padStart(2, '0')}
+            {' '}✓ QR Terverifikasi
           </span>
         ) : (
           <span className="text-sm text-red-600">
-            Belum terhubung. Silakan pindai QR meja.
+            QR meja belum terverifikasi. Silakan pindai QR meja terlebih dahulu.
           </span>
         )}
       </div>
@@ -69,7 +80,7 @@ export default function CustomerForm({
 
       <button
         onClick={handleSubmit}
-        disabled={!tableNumber}
+        disabled={!validTable}
         className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
       >
         Lanjutkan Pesanan
@@ -77,4 +88,3 @@ export default function CustomerForm({
     </section>
   );
 }
-
