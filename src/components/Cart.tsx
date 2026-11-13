@@ -40,7 +40,7 @@ export default function Cart({
             Belum ada pesanan.
           </p>
         ) : (
-          <div className="max-h-36 space-y-2 overflow-y-auto">
+          <div className="max-h-[25vh] space-y-2 overflow-y-auto overscroll-contain pr-1">
             {items.map((item) => (
               <div
                 key={item.menu.id}
@@ -88,4 +88,5 @@ export default function Cart({
       </div>
     </section>
   );
-          }
+}
+
