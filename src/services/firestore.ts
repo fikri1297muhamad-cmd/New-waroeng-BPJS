@@ -48,6 +48,7 @@ export function listenToMenus(
 export async function createOrder(data: {
   customer_name: string;
   table_number: number;
+  table_qr_token?: string;
   items: {
     menu_id: string;
     item_name: string;
@@ -65,7 +66,8 @@ export async function createOrder(data: {
     body: JSON.stringify({
       customer_name: data.customer_name,
       table_number: data.table_number,
-      items: data.items.map(item => ({
+      table_qr_token: data.table_qr_token,
+      items: data.items.map((item) => ({
         menuId: item.menu_id,
         quantity: item.quantity
       }))
