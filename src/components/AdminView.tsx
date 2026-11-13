@@ -11,6 +11,7 @@ import {
 import { db } from '../firebase';
 import { getAuth } from 'firebase/auth';
 import type { MenuItem } from '../types';
+import QRCode from 'qrcode';
 
 const rupiah = (value: number) =>
   new Intl.NumberFormat('id-ID', {
@@ -18,6 +19,12 @@ const rupiah = (value: number) =>
     currency: 'IDR',
     maximumFractionDigits: 0
   }).format(value);
+type TableQrItem = {
+  tableNumber: number;
+  tableName: string;
+  token: string;
+  imageUrl: string;
+};
 
 export default function AdminView() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
