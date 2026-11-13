@@ -1,3 +1,4 @@
+
 rules_version = '2';
 
 service cloud.firestore {
@@ -9,14 +10,22 @@ service cloud.firestore {
 
     function isAdmin() {
       return signedIn()
-        && exists(/databases/$(database)/documents/staff_profiles/$(request.auth.uid))
-        && get(/databases/$(database)/documents/staff_profiles/$(request.auth.uid)).data.role == 'admin';
+        && exists(
+          /databases/$(database)/documents/staff_profiles/$(request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/staff_profiles/$(request.auth.uid)
+        ).data.role in ['admin', 'admin 01'];
     }
 
     function isStaff() {
       return signedIn()
-        && exists(/databases/$(database)/documents/staff_profiles/$(request.auth.uid))
-        && get(/databases/$(database)/documents/staff_profiles/$(request.auth.uid)).data.role in ['admin', 'kasir'];
+        && exists(
+          /databases/$(database)/documents/staff_profiles/$(request.auth.uid)
+        )
+        && get(
+          /databases/$(database)/documents/staff_profiles/$(request.auth.uid)
+        ).data.role in ['admin', 'admin 01', 'kasir'];
     }
 
     match /menu_items/{menuId} {
@@ -30,26 +39,36 @@ service cloud.firestore {
     }
 
     match /staff_profiles/{userId} {
-      allow read: if signedIn() && request.auth.uid == userId;
+      allow read: if signedIn()
+        && request.auth.uid == userId;
+
       allow write: if false;
     }
 
     match /orders/{orderId} {
       allow read: if isStaff();
 
-      // Pembuatan pesanan akan diaktifkan
-      // setelah backend tepercaya disiapkan.
+      // Pembuatan pesanan hanya melalui backend tepercaya.
       allow create: if false;
 
+      // Staf hanya boleh memperbarui status pesanan.
+      // Pembayaran wajib melalui endpoint backend.
       allow update: if isStaff()
-        && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'payment_status'])
+        && request.resource.data.diff(resource.data)
+          .affectedKeys().hasOnly(['status'])
         && request.resource.data.status
-          in ['menunggu', 'diproses', 'siap', 'selesai', 'dibatalkan']
-        && request.resource.data.payment_status
-          in ['belum_lunas', 'lunas'];
+          in ['menunggu', 'diproses', 'siap', 'selesai', 'dibatalkan'];
 
+      // Penghapusan pesanan hanya untuk Admin.
       allow delete: if isAdmin();
+    }
+
+    match /order_items/{itemId} {
+      // Admin dan Kasir boleh membaca rincian pesanan.
+      allow read: if isStaff();
+
+      // Penulisan dan penghapusan hanya melalui backend tepercaya.
+      allow create, update, delete: if false;
     }
   }
 }
