@@ -48,7 +48,7 @@ export function listenToMenus(
 export async function createOrder(data: {
   customer_name: string;
   table_number: number;
-  table_qr_token?: string;
+  table_qr_token: string;
   items: {
     menu_id: string;
     item_name: string;
