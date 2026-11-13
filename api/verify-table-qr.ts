@@ -1,43 +1,45 @@
 
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-import { createHash, timingSafeEqual } from 'crypto';
+import {
+  createHash,
+  timingSafeEqual
+} from 'node:crypto';
 
 import {
+  initializeApp,
   cert,
-  getApps,
-  initializeApp
+  getApps
 } from 'firebase-admin/app';
 
 import { getFirestore } from 'firebase-admin/firestore';
 
 function getAdminApp() {
-  const existingApps = getApps();
+  const existingApp = getApps().find(
+    app => app.name === '[DEFAULT]'
+  );
 
-  if (existingApps.length > 0) {
-    return existingApps[0];
+  if (existingApp) return existingApp;
+
+  const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT;
+
+  if (!serviceAccount) {
+    throw new Error('FIREBASE_CONFIG_MISSING');
   }
 
-  const serviceAccountRaw =
-    process.env.FIREBASE_SERVICE_ACCOUNT;
-
-  if (!serviceAccountRaw) {
-    throw new Error('Server configuration error.');
-  }
-
-  const credentials = JSON.parse(serviceAccountRaw);
+  const credentials = JSON.parse(serviceAccount);
 
   if (credentials.project_id !== 'waroeng-bpjs') {
-    throw new Error('Invalid Firebase project.');
+    throw new Error('FIREBASE_PROJECT_MISMATCH');
   }
 
   return initializeApp({
     credential: cert(credentials),
-    projectId: 'waroeng-bpjs'
+    projectId: credentials.project_id
   });
 }
 
-function hashToken(token: string) {
+function hashToken(token: string): string {
   return createHash('sha256')
     .update(token)
     .digest('hex');
@@ -46,7 +48,7 @@ function hashToken(token: string) {
 function safeHashCompare(
   receivedHash: string,
   storedHash: string
-) {
+): boolean {
   if (
     !/^[a-f0-9]{64}$/i.test(receivedHash) ||
     !/^[a-f0-9]{64}$/i.test(storedHash)
@@ -60,21 +62,109 @@ function safeHashCompare(
   return timingSafeEqual(received, stored);
 }
 
+async function checkRateLimit(
+  db: FirebaseFirestore.Firestore,
+  ip: string
+) {
+  const ipHash = hashToken(ip);
+
+  const rateLimitRef = db
+    .collection('table_qr_verify_limits')
+    .doc(ipHash);
+
+  const now = Date.now();
+  const windowDuration = 60 * 1000;
+  const maxRequests = 120;
+
+  return db.runTransaction(async transaction => {
+    const snapshot = await transaction.get(rateLimitRef);
+    const data = snapshot.data();
+
+    const windowStartedAt = Number(
+      data?.window_started_at || 0
+    );
+
+    const requestCount = Number(
+      data?.request_count || 0
+    );
+
+    const sameWindow =
+      windowStartedAt > 0 &&
+      now - windowStartedAt < windowDuration;
+
+    if (sameWindow && requestCount >= maxRequests) {
+      return false;
+    }
+
+    transaction.set(rateLimitRef, {
+      window_started_at: sameWindow
+        ? windowStartedAt
+        : now,
+      request_count: sameWindow
+        ? requestCount + 1
+        : 1,
+      updated_at: now
+    });
+
+    return true;
+  });
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
   res.setHeader('Cache-Control', 'no-store, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
   if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+
     return res.status(405).json({
       success: false,
       error: 'Metode tidak diizinkan.'
     });
   }
 
+  const contentType = String(
+    req.headers['content-type'] || ''
+  ).toLowerCase();
+
+  if (!contentType.includes('application/json')) {
+    return res.status(415).json({
+      success: false,
+      error: 'Format permintaan tidak valid.'
+    });
+  }
+
+  const contentLength = Number(
+    req.headers['content-length'] || 0
+  );
+
+  if (
+    !Number.isFinite(contentLength) ||
+    contentLength > 4096
+  ) {
+    return res.status(413).json({
+      success: false,
+      error: 'Ukuran permintaan terlalu besar.'
+    });
+  }
+
   try {
-    const body = req.body ?? {};
+    const body = req.body;
+
+    if (
+      !body ||
+      typeof body !== 'object' ||
+      Array.isArray(body)
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Data permintaan tidak valid.'
+      });
+    }
 
     const tableNumber = Number(body.table_number);
     const token = body.token;
@@ -101,8 +191,35 @@ export default async function handler(
       });
     }
 
+    const forwardedFor =
+      req.headers['x-forwarded-for'];
+
+    const ip = (
+      typeof forwardedFor === 'string'
+        ? forwardedFor.split(',')[0].trim()
+        : ''
+    );
+
+    if (!ip) {
+      return res.status(400).json({
+        success: false,
+        error: 'Permintaan tidak dapat diverifikasi.'
+      });
+    }
+
     const app = getAdminApp();
     const db = getFirestore(app);
+
+    const allowed = await checkRateLimit(db, ip);
+
+    if (!allowed) {
+      res.setHeader('Retry-After', '60');
+
+      return res.status(429).json({
+        success: false,
+        error: 'Terlalu banyak permintaan. Silakan coba lagi sebentar.'
+      });
+    }
 
     const tableId =
       `Meja ${String(tableNumber).padStart(2, '0')}`;
@@ -121,7 +238,10 @@ export default async function handler(
         qrRef.get()
       ]);
 
-    if (!tableSnapshot.exists || !qrSnapshot.exists) {
+    if (
+      !tableSnapshot.exists ||
+      !qrSnapshot.exists
+    ) {
       return res.status(403).json({
         success: false,
         error: 'QR meja tidak terdaftar.'
@@ -172,7 +292,15 @@ export default async function handler(
       table_number: tableNumber,
       verified: true
     });
-  } catch {
+
+  } catch (error) {
+    console.error(
+      'Verify table QR error:',
+      error instanceof Error
+        ? error.message
+        : 'UNKNOWN_ERROR'
+    );
+
     return res.status(500).json({
       success: false,
       error: 'Verifikasi QR gagal. Silakan coba kembali.'
