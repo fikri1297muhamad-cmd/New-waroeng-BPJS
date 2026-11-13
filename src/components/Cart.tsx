@@ -1,3 +1,4 @@
+
 import type { MenuItem } from '../types';
 
 type CartItem = {
@@ -29,18 +30,18 @@ export default function Cart({
   );
 
   return (
-    <section className="fixed bottom-0 left-0 right-0 z-20 border-t bg-white p-4 shadow-lg">
-      <div className="mx-auto max-w-5xl">
-        <h2 className="mb-3 font-bold text-gray-800">
+    <section className="fixed bottom-0 left-0 right-0 z-20 flex max-h-[30vh] flex-col border-t bg-white p-4 shadow-lg">
+      <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col">
+        <h2 className="mb-3 shrink-0 font-bold text-gray-800">
           Keranjang Pesanan
         </h2>
 
         {items.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="shrink-0 text-sm text-gray-500">
             Belum ada pesanan.
           </p>
         ) : (
-          <div className="max-h-[25vh] space-y-2 overflow-y-auto overscroll-contain pr-1">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
             {items.map((item) => (
               <div
                 key={item.menu.id}
@@ -55,7 +56,7 @@ export default function Cart({
                   </p>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-3">
                   <button
                     onClick={() => onRemove(item.menu.id)}
                     className="h-8 w-8 rounded-full bg-gray-100 font-bold"
@@ -79,7 +80,7 @@ export default function Cart({
           </div>
         )}
 
-        <div className="mt-3 flex items-center justify-between border-t pt-3">
+        <div className="mt-3 flex shrink-0 items-center justify-between border-t pt-3">
           <span className="font-bold">Total Pembayaran</span>
           <span className="text-lg font-extrabold text-green-800">
             {rupiah(total)}
@@ -89,4 +90,3 @@ export default function Cart({
     </section>
   );
 }
-
