@@ -11,6 +11,7 @@ import type { MenuItem } from './types';
 import Cart from './components/Cart';
 import CustomerForm from './components/CustomerForm';
 import OrderConfirmation from './components/OrderConfirmation';
+import * as QRCode from 'qrcode';
 
 type CartItem = {
   menu: MenuItem;
@@ -80,6 +81,8 @@ export default function App() {
     total: number;
   } | null>(null);
 
+  const [orderQrDataUrl, setOrderQrDataUrl] = useState('');
+
   const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
   const [staffName, setStaffName] = useState('');
   const [showStaffLogin, setShowStaffLogin] = useState(false);
@@ -91,6 +94,38 @@ export default function App() {
       JSON.stringify(cart)
     );
   }, [cart]);
+
+  // Buat QR pesanan secara lokal tanpa layanan QR pihak ketiga.
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!successOrder?.orderCode) {
+      setOrderQrDataUrl('');
+      return;
+    }
+
+    QRCode.toDataURL(successOrder.orderCode, {
+      width: 320,
+      margin: 2,
+      errorCorrectionLevel: 'M'
+    })
+      .then((url) => {
+        if (!cancelled) {
+          setOrderQrDataUrl(url);
+        }
+      })
+      .catch((err) => {
+        console.error('Gagal membuat QR pesanan:', err);
+
+        if (!cancelled) {
+          setOrderQrDataUrl('');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [successOrder?.orderCode]);
 
   // Verifikasi QR meja dari alamat halaman.
   useEffect(() => {
@@ -373,10 +408,45 @@ export default function App() {
     );
   }
 
+  // Tampilan struk setelah pesanan berhasil disimpan.
   if (successOrder) {
     return (
-      <main className="min-h-screen bg-amber-50 p-4">
-        <div className="mx-auto max-w-lg rounded-2xl bg-white p-5 shadow-lg">
+      <main className="receipt-screen min-h-screen bg-amber-50 p-4">
+        <style>{`
+          @page {
+            margin: 12mm;
+          }
+
+          @media print {
+            body {
+              background: white !important;
+            }
+
+            .receipt-screen {
+              min-height: 0 !important;
+              padding: 0 !important;
+              background: white !important;
+            }
+
+            .receipt-card {
+              max-width: none !important;
+              margin: 0 !important;
+              padding: 0 !important;
+              border-radius: 0 !important;
+              box-shadow: none !important;
+            }
+
+            .receipt-actions {
+              display: none !important;
+            }
+
+            .receipt-item {
+              break-inside: avoid;
+            }
+          }
+        `}</style>
+
+        <div className="receipt-card mx-auto max-w-lg rounded-2xl bg-white p-5 shadow-lg">
           <div className="text-center">
             <img
               src="/logo.png"
@@ -388,7 +458,7 @@ export default function App() {
               WAROENG BPJS
             </h1>
 
-            <p className="mt-2 text-xs text-gray-600">
+            <p className="mt-2 text-xs leading-relaxed text-gray-600">
               Jl. Kandangsapi 001/002 No. 01,
               Desa Tanjungsari, Kecamatan Sukaluyu,
               Kabupaten Cianjur
@@ -399,14 +469,14 @@ export default function App() {
 
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
-              <p className="text-gray-500">NO. MEJA</p>
+              <p className="text-xs text-gray-500">NO. MEJA</p>
               <p className="font-bold">
                 Meja {String(successOrder.table).padStart(2, '0')}
               </p>
             </div>
 
-            <div>
-              <p className="text-gray-500">NAMA PEMESAN</p>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500">NAMA PEMESAN</p>
               <p className="break-words font-bold">
                 {successOrder.name}
               </p>
@@ -416,70 +486,104 @@ export default function App() {
           <hr className="my-4" />
 
           <div className="text-center">
-            <p className="font-bold text-gray-700">NOMOR PESANAN</p>
+            <p className="text-sm font-bold text-gray-700">
+              NOMOR PESANAN
+            </p>
 
-            <p className="mt-1 text-xl font-extrabold text-green-800">
+            <p className="mt-1 break-all text-xl font-extrabold text-green-800">
               {successOrder.orderCode}
             </p>
 
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(successOrder.orderCode)}`}
-              alt="QR Pesanan"
-              className="mx-auto mt-3 h-44 w-44"
-            />
+            {orderQrDataUrl ? (
+              <img
+                src={orderQrDataUrl}
+                alt="QR Pesanan"
+                className="mx-auto mt-3 h-44 w-44 object-contain"
+              />
+            ) : (
+              <p className="mt-5 text-sm text-gray-500">
+                Menyiapkan QR pesanan...
+              </p>
+            )}
 
-            <p className="text-xs text-gray-500">
-              QR Code Pesanan
+            <p className="mt-2 text-xs text-gray-500">
+              QR Code Nomor Pesanan
             </p>
           </div>
 
           <hr className="my-4" />
 
-          <h2 className="mb-3 font-extrabold">RINCIAN PESANAN</h2>
+          <h2 className="mb-3 font-extrabold text-gray-800">
+            RINCIAN PESANAN
+          </h2>
 
-          {successOrder.items.map((item, index) => (
-            <div
-              key={`${item.menu_id}-${index}`}
-              className="flex justify-between gap-3 border-b py-2 text-sm"
-            >
-              <div>
-                <p className="font-semibold">{item.item_name}</p>
-                <p className="text-gray-500">
-                  {item.quantity} × {rupiah(item.item_price)}
+          <div>
+            {successOrder.items.map((item, index) => (
+              <div
+                key={`${item.menu_id}-${index}`}
+                className="receipt-item grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-gray-100 py-3 text-sm"
+              >
+                <div className="min-w-0">
+                  <p className="break-words font-semibold text-gray-800">
+                    {index + 1}. {item.item_name}
+                  </p>
+
+                  <p className="mt-1 text-xs text-gray-500">
+                    {item.quantity} × {rupiah(item.item_price)}
+                  </p>
+                </div>
+
+                <p className="whitespace-nowrap text-right font-bold text-gray-800">
+                  {rupiah(item.subtotal)}
                 </p>
               </div>
+            ))}
+          </div>
 
-              <p className="font-bold">{rupiah(item.subtotal)}</p>
-            </div>
-          ))}
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-green-50 p-4">
+            <span className="font-extrabold text-gray-800">
+              TOTAL
+            </span>
 
-          <div className="mt-4 flex justify-between text-lg font-extrabold">
-            <span>TOTAL</span>
-            <span className="text-green-800">
+            <span className="text-lg font-extrabold text-green-800">
               {rupiah(successOrder.total)}
             </span>
           </div>
 
-          <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm leading-relaxed text-green-900">
-            <strong>NOTE:</strong>
-
-            <p className="mt-2">
-              Silahkan lakukan pembayaran di kasir dengan menunjukkan
-              bukti pesanan atau screenshot pesanan ini kepada staf
-              kasir kami.
+          <div className="mt-5 rounded-xl bg-amber-50 p-4 text-sm leading-relaxed text-gray-800">
+            <p className="font-extrabold text-amber-800">
+              INFORMASI PEMBAYARAN
             </p>
 
-            <p className="mt-4 text-center text-lg font-extrabold">
+            <p className="mt-2">
+              Silakan lakukan pembayaran di kasir dengan menunjukkan
+              bukti pesanan ini atau QR kode pesanan kepada staf kasir.
+            </p>
+
+            <p className="mt-3 font-semibold text-amber-800">
+              Status pembayaran: BELUM LUNAS
+            </p>
+
+            <p className="mt-4 text-center text-lg font-extrabold text-green-800">
               TERIMA KASIH
             </p>
           </div>
 
-          <button
-            onClick={() => setSuccessOrder(null)}
-            className="mt-5 w-full rounded-xl bg-green-800 py-3 font-bold text-white"
-          >
-            ← Kembali ke Halaman Utama Pelanggan
-          </button>
+          <div className="receipt-actions mt-5 grid gap-3">
+            <button
+              onClick={() => window.print()}
+              className="w-full rounded-xl bg-orange-500 py-3 font-bold text-white hover:bg-orange-600"
+            >
+              Cetak / Simpan PDF
+            </button>
+
+            <button
+              onClick={() => setSuccessOrder(null)}
+              className="w-full rounded-xl bg-green-800 py-3 font-bold text-white"
+            >
+              ← Kembali ke Halaman Utama Pelanggan
+            </button>
+          </div>
         </div>
       </main>
     );
