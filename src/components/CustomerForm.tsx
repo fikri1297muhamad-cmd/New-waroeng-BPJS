@@ -15,6 +15,7 @@ export default function CustomerForm({
   const [name, setName] = useState('');
 
   const validName = /^[A-Za-z ]+$/.test(name.trim());
+
   const validTable = Boolean(
     tableNumber &&
     Number.isInteger(tableNumber) &&
@@ -22,6 +23,11 @@ export default function CustomerForm({
     tableNumber <= 50 &&
     tableQrVerified
   );
+
+  const canSubmit =
+    validTable &&
+    name.trim().length > 0 &&
+    validName;
 
   const handleSubmit = () => {
     if (!validTable || !tableNumber) {
@@ -56,7 +62,7 @@ export default function CustomerForm({
         {validTable ? (
           <span className="font-bold text-green-800">
             Meja {String(tableNumber).padStart(2, '0')}
-            {' '}✓ QR Terverifikasi
+            {' '}– Terisi
           </span>
         ) : (
           <span className="text-sm text-red-600">
@@ -80,7 +86,7 @@ export default function CustomerForm({
 
       <button
         onClick={handleSubmit}
-        disabled={!validTable}
+        disabled={!canSubmit}
         className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
       >
         Lanjutkan Pesanan
