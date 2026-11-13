@@ -1,8 +1,7 @@
-
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 
 function getAdminApp() {
   const existingApp = getApps().find(
@@ -28,11 +27,39 @@ function getAdminApp() {
     projectId: credentials.project_id
   });
 }
+
+function hashToken(token: string): Buffer {
+  return createHash('sha256').update(token, 'utf8').digest();
+}
+
+function safeHashMatch(
+  receivedToken: string,
+  storedHash: unknown
+): boolean {
+  if (
+    typeof storedHash !== 'string' ||
+    !/^[a-f0-9]{64}$/i.test(storedHash)
+  ) {
+    return false;
+  }
+
+  const receivedHash = hashToken(receivedToken);
+  const expectedHash = Buffer.from(storedHash, 'hex');
+
+  if (receivedHash.length !== expectedHash.length) {
+    return false;
+  }
+
+  return timingSafeEqual(receivedHash, expectedHash);
+}
+
 export default async function handler(
   req: VercelRequest,
   res: VercelResponse
 ) {
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 
   if (req.method !== 'POST') {
     return res.status(405).json({
@@ -57,6 +84,11 @@ export default async function handler(
         : '';
 
     const tableNumber = Number(body.table_number);
+    const tableQrToken =
+      typeof body.table_qr_token === 'string'
+        ? body.table_qr_token
+        : '';
+
     const items = body.items;
 
     if (
@@ -77,6 +109,13 @@ export default async function handler(
       return res.status(400).json({
         success: false,
         error: 'Nomor meja harus antara 01 sampai 50.'
+      });
+    }
+
+    if (!/^[A-Za-z0-9_-]{43}$/.test(tableQrToken)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Token QR meja tidak valid. Silakan pindai ulang QR meja.'
       });
     }
 
@@ -132,19 +171,20 @@ export default async function handler(
     }
 
     const db = getFirestore(getAdminApp());
-const cekMeja = await db
-  .collection('restaurant_tables')
-  .limit(10)
-  .get();
 
-console.log(
-  'DAFTAR MEJA DI SERVER:',
-  cekMeja.docs.map(doc => doc.id)
-);
     const tableId = `Meja ${String(tableNumber).padStart(2, '0')}`;
-const tableRef = db.collection('restaurant_tables').doc(tableId);
-const ordersRef = db.collection('orders');
-    const orderRef = db.collection('orders').doc();
+
+    const tableRef = db
+      .collection('restaurant_tables')
+      .doc(tableId);
+
+    const qrRef = db
+      .collection('table_qr_tokens')
+      .doc(tableId);
+
+    const ordersRef = db.collection('orders');
+    const orderRef = ordersRef.doc();
+
     const orderCode =
       `WB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
 
@@ -153,40 +193,15 @@ const ordersRef = db.collection('orders');
     );
 
     const result = await db.runTransaction(async (transaction) => {
-      console.log('PEMERIKSAAN MEJA:', {
-  projectId: getAdminApp().options.projectId,
-  tableId: tableId
-});
+      // Semua pembacaan dilakukan sebelum penulisan transaksi.
       const tableSnapshot = await transaction.get(tableRef);
+      const qrSnapshot = await transaction.get(qrRef);
+
       const activeOrdersSnapshot = await transaction.get(
-  ordersRef
-    .where('table_number', '==', tableNumber)
-    .where('payment_status', '==', 'belum_lunas')
-);
-
-if (!activeOrdersSnapshot.empty) {
-  throw new Error('MEJA_SUDAH_DIPESAN');
-}
-      console.log('HASIL BACA MEJA:', {
-  exists: tableSnapshot.exists,
-  path: tableSnapshot.ref.path
-});
-
-      if (!tableSnapshot.exists) {
-        throw new Error('MEJA_TIDAK_DITEMUKAN');
-      }
-
-      const tableData = tableSnapshot.data();
-
-const nomorMejaFirebase =
-  tableData?.Table_number ?? tableData?.table_number;
-
-if (
-  tableData?.is_active !== true ||
-  Number(nomorMejaFirebase) !== tableNumber
-) {
-  throw new Error('MEJA_TIDAK_AKTIF');
-}
+        ordersRef
+          .where('table_number', '==', tableNumber)
+          .where('payment_status', '==', 'belum_lunas')
+      );
 
       const menuSnapshots = await Promise.all(
         normalizedItems.map(item =>
@@ -196,10 +211,49 @@ if (
         )
       );
 
+      if (!tableSnapshot.exists) {
+        throw new Error('MEJA_TIDAK_DITEMUKAN');
+      }
+
+      const tableData = tableSnapshot.data();
+
+      const nomorMejaFirebase =
+        tableData?.Table_number ?? tableData?.table_number;
+
+      if (
+        tableData?.is_active !== true ||
+        Number(nomorMejaFirebase) !== tableNumber
+      ) {
+        throw new Error('MEJA_TIDAK_AKTIF');
+      }
+
+      if (!qrSnapshot.exists) {
+        throw new Error('QR_TIDAK_VALID');
+      }
+
+      const qrData = qrSnapshot.data();
+
+      if (
+        qrData?.is_active !== true ||
+        Number(qrData?.table_number) !== tableNumber ||
+        qrData?.token_version !== 1 ||
+        !safeHashMatch(tableQrToken, qrData?.token_hash)
+      ) {
+        throw new Error('QR_TIDAK_VALID');
+      }
+
+      if (!activeOrdersSnapshot.empty) {
+        throw new Error('MEJA_SUDAH_DIPESAN');
+      }
+
       const orderItems = [];
       let totalAmount = 0;
 
-      for (let index = 0; index < normalizedItems.length; index++) {
+      for (
+        let index = 0;
+        index < normalizedItems.length;
+        index++
+      ) {
         const requested = normalizedItems[index];
         const menuSnapshot = menuSnapshots[index];
 
@@ -207,43 +261,44 @@ if (
           throw new Error('PRODUK_TIDAK_DITEMUKAN');
         }
 
-        
-const menu = menuSnapshot.data();
+        const menu = menuSnapshot.data();
 
-if (menu?.is_available !== true) {
-  throw new Error('PRODUK_TIDAK_TERSEDIA');
-}
+        if (menu?.is_available !== true) {
+          throw new Error('PRODUK_TIDAK_TERSEDIA');
+        }
 
-const menuName = menu?.Nama ?? menu?.name;
-const rawPrice = menu?.Price ?? menu?.price;
-const itemPrice = Number(rawPrice);
+        const menuName = menu?.Nama ?? menu?.name;
+        const rawPrice = menu?.Price ?? menu?.price;
+        const itemPrice = Number(rawPrice);
 
-if (
-  typeof menuName !== 'string' ||
-  menuName.trim().length === 0 ||
-  rawPrice === null ||
-  rawPrice === undefined ||
-  !Number.isFinite(itemPrice) ||
-  itemPrice < 0
-) {
-  throw new Error('DATA_PRODUK_TIDAK_VALID');
-}
+        if (
+          typeof menuName !== 'string' ||
+          menuName.trim().length === 0 ||
+          rawPrice === null ||
+          rawPrice === undefined ||
+          !Number.isFinite(itemPrice) ||
+          itemPrice < 0
+        ) {
+          throw new Error('DATA_PRODUK_TIDAK_VALID');
+        }
 
-const subtotal = Math.round(itemPrice * requested.quantity);
+        const subtotal = Math.round(
+          itemPrice * requested.quantity
+        );
 
-if (!Number.isSafeInteger(subtotal)) {
-  throw new Error('HARGA_PRODUK_TIDAK_VALID');
-}
+        if (!Number.isSafeInteger(subtotal)) {
+          throw new Error('HARGA_PRODUK_TIDAK_VALID');
+        }
 
-totalAmount += subtotal;
+        totalAmount += subtotal;
 
-orderItems.push({
-  menu_id: requested.menuId,
-  item_name: menuName.trim(),
-  item_price: itemPrice,
-  quantity: requested.quantity,
-  subtotal
-});
+        orderItems.push({
+          menu_id: requested.menuId,
+          item_name: menuName.trim(),
+          item_price: itemPrice,
+          quantity: requested.quantity,
+          subtotal
+        });
       }
 
       if (!Number.isSafeInteger(totalAmount)) {
@@ -284,14 +339,14 @@ orderItems.push({
     });
 
   } catch (error) {
-    console.error('Create order error:', error);
-
     const message =
       error instanceof Error ? error.message : '';
 
     const knownErrors: Record<string, string> = {
       MEJA_TIDAK_DITEMUKAN: 'Nomor meja belum tersedia.',
       MEJA_TIDAK_AKTIF: 'Meja sedang tidak aktif.',
+      QR_TIDAK_VALID: 'QR meja tidak valid atau sudah dinonaktifkan. Silakan pindai ulang.',
+      MEJA_SUDAH_DIPESAN: 'Meja ini masih memiliki pesanan yang belum lunas.',
       PRODUK_TIDAK_DITEMUKAN: 'Salah satu produk tidak ditemukan.',
       PRODUK_TIDAK_TERSEDIA: 'Salah satu produk sedang tidak tersedia.',
       DATA_PRODUK_TIDAK_VALID: 'Data produk tidak valid.',
@@ -300,11 +355,21 @@ orderItems.push({
     };
 
     if (knownErrors[message]) {
-      return res.status(400).json({
+      const status =
+        message === 'MEJA_SUDAH_DIPESAN'
+          ? 409
+          : message === 'QR_TIDAK_VALID'
+            ? 403
+            : 400;
+
+      return res.status(status).json({
         success: false,
         error: knownErrors[message]
       });
     }
+
+    // Jangan mencatat token QR atau isi lengkap permintaan ke log.
+    console.error('Create order error:', message || 'Unknown error');
 
     return res.status(500).json({
       success: false,
@@ -312,3 +377,4 @@ orderItems.push({
     });
   }
 }
+
