@@ -728,34 +728,40 @@ export default function App() {
 
   return (
     <main className="min-h-screen bg-amber-50 pb-80">
-      <header className="bg-green-800 px-5 py-7 text-white">
-        <div className="mx-auto max-w-5xl">
-          <img
-            src="/logo.png"
-            alt="Logo Waroeng BPJS"
-            className="mb-4 h-32 w-32 object-contain"
-          />
+      <header className="bg-green-800 px-4 py-6 text-white sm:px-6 sm:py-8">
+        <div className="mx-auto flex max-w-5xl flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <img
+              src="/logo.png"
+              alt="Logo Waroeng BPJS"
+              className="h-20 w-20 shrink-0 object-contain sm:h-28 sm:w-28"
+            />
 
-          <h1 className="text-3xl font-extrabold">
-            WAROENG BPJS
-          </h1>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-extrabold leading-tight tracking-wide sm:text-4xl">
+                WAROENG BPJS
+              </h1>
 
-          <p className="mt-2 text-sm text-green-100">
-            Nikmat & Pas di Kantong
-          </p>
-
-          <p className="mt-4 text-sm leading-relaxed text-green-100">
-            Jl. Kandangsapi 001/002 No. 01,
-            Desa Tanjungsari, Kecamatan Sukaluyu,
-            Kabupaten Cianjur
-          </p>
+              <p className="mt-2 text-sm font-semibold text-green-100 sm:text-base">
+                Budget Pas, Jajanan Sehat
+              </p>
+            </div>
+          </div>
 
           <button
             onClick={() => setShowStaffLogin(true)}
-            className="mt-4 rounded-lg bg-white px-4 py-2 font-bold text-green-900"
+            className="w-full shrink-0 rounded-xl bg-white px-5 py-3 text-sm font-bold text-green-900 shadow-md transition hover:bg-green-50 sm:w-auto"
           >
             Login Admin / Kasir
           </button>
+
+          <div className="border-t border-green-700 pt-4">
+            <p className="text-xs leading-relaxed text-green-100 sm:text-sm">
+              Jl. Kandangsapi 001/002 No. 01,
+              Desa Tanjungsari, Kecamatan Sukaluyu,
+              Kabupaten Cianjur
+            </p>
+          </div>
         </div>
       </header>
 
