@@ -1,6 +1,7 @@
 
-import { signOut } from 'firebase/auth';
-import { auth } from './firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import StaffLogin from './components/StaffLogin';
 import AdminView from './components/AdminView';
 import KasirView from './components/KasirView';
@@ -86,6 +87,9 @@ export default function App() {
   const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
   const [staffName, setStaffName] = useState('');
   const [showStaffLogin, setShowStaffLogin] = useState(false);
+
+  // Mencegah halaman pelanggan muncul sebelum sesi staf diperiksa.
+  const [authChecking, setAuthChecking] = useState(true);
 
   // Simpan keranjang pelanggan.
   useEffect(() => {
@@ -240,6 +244,123 @@ export default function App() {
     setStaffName('');
   };
 
+  // Pulihkan sesi login staf setelah halaman dibuka atau di-refresh.
+  useEffect(() => {
+    let active = true;
+
+    if (!showStaffLogin) {
+      setAuthChecking(true);
+    } else {
+      setAuthChecking(false);
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!active) return;
+
+      if (!user) {
+        setStaffRole(null);
+        setStaffName('');
+        setAuthChecking(false);
+        return;
+      }
+
+      // Saat proses login manual berlangsung, biarkan StaffLogin
+      // menyelesaikan pemeriksaan email, password, dan kode Admin.
+      if (showStaffLogin) {
+        setAuthChecking(false);
+        return;
+      }
+
+      try {
+        const profileSnapshot = await getDoc(
+          doc(db, 'staff_profiles', user.uid)
+        );
+
+        if (!active) return;
+
+        if (!profileSnapshot.exists()) {
+          throw new Error('Profil staf tidak ditemukan.');
+        }
+
+        const profile = profileSnapshot.data();
+
+        const role = String(profile.role ?? '')
+          .trim()
+          .toLowerCase();
+
+        const name = String(
+          profile.full_name || user.email || 'Staf'
+        );
+
+        if (role === 'kasir') {
+          setStaffName(name);
+          setStaffRole('kasir');
+          return;
+        }
+
+        if (role === 'admin' || role === 'admin 01') {
+          const tokenResult = await user.getIdTokenResult();
+
+          if (!active) return;
+
+          const adminAccess =
+            tokenResult.claims.adminAccess === true;
+
+          const adminAccessUntil = Number(
+            tokenResult.claims.adminAccessUntil ?? 0
+          );
+
+          const currentTime = Math.floor(Date.now() / 1000);
+
+          if (
+            !adminAccess ||
+            adminAccessUntil <= currentTime
+          ) {
+            await signOut(auth);
+
+            if (active) {
+              setStaffRole(null);
+              setStaffName('');
+            }
+
+            return;
+          }
+
+          setStaffName(name);
+          setStaffRole('admin');
+          return;
+        }
+
+        throw new Error('Role staf tidak dikenali.');
+      } catch (err) {
+        console.error('Pemulihan sesi staf gagal:', err);
+
+        try {
+          await signOut(auth);
+        } catch (signOutError) {
+          console.error(
+            'Gagal mengakhiri sesi staf:',
+            signOutError
+          );
+        }
+
+        if (active) {
+          setStaffRole(null);
+          setStaffName('');
+        }
+      } finally {
+        if (active) {
+          setAuthChecking(false);
+        }
+      }
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [showStaffLogin]);
+
   useEffect(() => {
     const unsubscribe = listenToMenus(
       (data) => {
@@ -374,6 +495,22 @@ export default function App() {
       setSending(false);
     }
   };
+
+  // Tunggu Firebase memeriksa sesi sebelum menampilkan halaman.
+  if (authChecking) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-amber-50 p-4">
+        <div className="rounded-xl bg-white px-6 py-5 text-center shadow">
+          <p className="font-semibold text-green-800">
+            Memeriksa sesi...
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            Mohon tunggu sebentar.
+          </p>
+        </div>
+      </main>
+    );
+  }
 
   if (staffRole) {
     return (
