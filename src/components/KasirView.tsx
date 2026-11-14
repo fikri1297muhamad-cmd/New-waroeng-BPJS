@@ -382,6 +382,34 @@ export default function KasirView() {
     [filteredActiveOrders]
   );
 
+  // Riwayat hanya berisi pesanan selesai dan dibatalkan.
+  const historyOrders = useMemo(
+    () => orders.filter(order =>
+      ['selesai', 'dibatalkan'].includes(order.status)
+    ),
+    [orders]
+  );
+
+  const filteredHistoryOrders = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+
+    if (!keyword) return historyOrders;
+
+    return historyOrders.filter(order =>
+      String(order.order_code || '')
+        .toLowerCase()
+        .includes(keyword) ||
+      String(order.customer_name || '')
+        .toLowerCase()
+        .includes(keyword)
+    );
+  }, [historyOrders, search]);
+
+  const groupedHistoryOrders = useMemo(
+    () => groupOrdersByDate(filteredHistoryOrders),
+    [filteredHistoryOrders]
+  );
+
   useEffect(() => {
     if (!selectedOrderId || !showDetail) return;
 
@@ -979,6 +1007,165 @@ export default function KasirView() {
     </div>
   );
 
+  // Detail riwayat hanya untuk melihat data dan mencetak struk.
+  const renderHistoryDetail = () => (
+    <div
+      ref={detailRef}
+      className="scroll-mt-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm xl:col-span-2"
+    >
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold text-gray-900">
+            Detail Riwayat Pesanan
+          </h2>
+          <p className="text-xs text-gray-500">
+            Informasi pesanan yang sudah selesai atau dibatalkan
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowDetail(false)}
+          aria-label="Tutup detail riwayat"
+          title="Sembunyikan detail"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl font-bold text-gray-600 hover:bg-red-100 hover:text-red-700"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="mt-4">
+        {!selectedOrder ||
+        !['selesai', 'dibatalkan'].includes(selectedOrder.status) ? (
+          <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
+            Pilih pesanan selesai atau dibatalkan untuk melihat detail.
+          </div>
+        ) : (
+          <>
+            <div className="mb-4 rounded-xl bg-gray-50 p-3 text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500">Nomor Pesanan</span>
+                <strong className="text-right">
+                  {selectedOrder.order_code}
+                </strong>
+              </div>
+
+              <div className="mt-2 flex justify-between gap-2">
+                <span className="text-gray-500">Pelanggan</span>
+                <strong className="text-right">
+                  {selectedOrder.customer_name}
+                </strong>
+              </div>
+
+              <div className="mt-2 flex justify-between gap-2">
+                <span className="text-gray-500">Meja</span>
+                <strong>
+                  {String(selectedOrder.table_number).padStart(2, '0')}
+                </strong>
+              </div>
+
+              <div className="mt-2 flex justify-between gap-2">
+                <span className="text-gray-500">Waktu (WIB)</span>
+                <strong className="text-right text-xs">
+                  {formatDate(selectedOrder.created_at)}
+                </strong>
+              </div>
+
+              <div className="mt-3 border-t border-gray-200 pt-3">
+                <span className="text-xs font-bold text-gray-500">
+                  STATUS PESANAN
+                </span>
+                <p className={`mt-1 inline-block rounded-full px-3 py-1 text-xs font-extrabold ${statusColor(selectedOrder.status)}`}>
+                  {statusLabels[selectedOrder.status] || selectedOrder.status}
+                </p>
+              </div>
+            </div>
+
+            <div className="my-4">
+              <h3 className="mb-3 text-sm font-extrabold">
+                Rincian Menu
+              </h3>
+
+              {detailLoading ? (
+                <p className="py-5 text-center text-sm text-gray-500">
+                  Memuat rincian...
+                </p>
+              ) : detailItems.length === 0 ? (
+                <p className="rounded-lg bg-gray-50 p-4 text-center text-xs text-gray-500">
+                  Rincian menu tidak tersedia.
+                </p>
+              ) : (
+                <div className="max-h-60 space-y-3 overflow-y-auto">
+                  {detailItems.map((item, index) => (
+                    <div
+                      key={index}
+                      className="border-b border-gray-100 pb-2"
+                    >
+                      <div className="flex justify-between gap-2 text-sm">
+                        <span className="font-semibold">
+                          {item.item_name}
+                        </span>
+                        <span className="font-bold">
+                          {rupiah(item.subtotal)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {item.quantity} × {rupiah(item.item_price)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between border-t-2 border-gray-200 py-3 font-extrabold">
+              <span>TOTAL</span>
+              <span className="text-green-900">
+                {rupiah(selectedOrder.total_amount)}
+              </span>
+            </div>
+
+            <div className="mb-4 rounded-xl bg-gray-50 p-3">
+              <p className="text-xs text-gray-500">
+                STATUS PEMBAYARAN
+              </p>
+              <p className={`mt-1 font-extrabold ${
+                selectedOrder.payment_status === 'lunas'
+                  ? 'text-green-700'
+                  : 'text-amber-700'
+              }`}>
+                {selectedOrder.payment_status === 'lunas'
+                  ? 'SUDAH LUNAS'
+                  : 'BELUM LUNAS'}
+              </p>
+
+              {selectedOrder.payment_method && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Metode: {selectedOrder.payment_method === 'tunai'
+                    ? 'Tunai'
+                    : 'Non-Tunai'}
+                </p>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-800">
+              Riwayat ini hanya untuk melihat data pesanan. Status dan
+              pembayaran tidak dapat diubah dari halaman ini.
+            </div>
+
+            <button
+              type="button"
+              onClick={() => printReceipt(selectedOrder)}
+              className="mt-4 w-full rounded-xl bg-gray-800 p-3 text-sm font-bold text-white hover:bg-gray-900"
+            >
+              CETAK STRUK
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
       <style>{`
@@ -1037,6 +1224,7 @@ export default function KasirView() {
                     onClick={() => {
                       setActivePage(item.id);
                       setSearch('');
+                      setSelectedOrderId('');
                       setShowDetail(true);
                       setError('');
                     }}
@@ -1256,6 +1444,60 @@ export default function KasirView() {
                       filteredActiveOrders.length,
                       'Daftar Pesanan Aktif',
                       'Tidak ada pesanan aktif saat ini.'
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : activePage === 'riwayat' ? (
+              <>
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h1 className="text-2xl font-extrabold text-green-950">
+                      Riwayat Pesanan
+                    </h1>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Arsip pesanan yang sudah selesai dan dibatalkan
+                    </p>
+                  </div>
+
+                  <span className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-bold text-green-900">
+                    {historyOrders.length} Pesanan
+                  </span>
+                </div>
+
+                <div className="mb-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl border border-gray-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-gray-500">
+                      SELESAI
+                    </p>
+                    <p className="mt-1 text-xl font-extrabold text-gray-800">
+                      {historyOrders.filter(order => order.status === 'selesai').length}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-red-100 bg-white p-3">
+                    <p className="text-xs font-semibold text-gray-500">
+                      DIBATALKAN
+                    </p>
+                    <p className="mt-1 text-xl font-extrabold text-red-700">
+                      {historyOrders.filter(order => order.status === 'dibatalkan').length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
+                  {showDetail && (
+                    <div className="order-1 xl:order-2">
+                      {renderHistoryDetail()}
+                    </div>
+                  )}
+
+                  <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
+                    {renderOrderList(
+                      groupedHistoryOrders,
+                      filteredHistoryOrders.length,
+                      'Daftar Riwayat Pesanan',
+                      'Belum ada pesanan selesai atau dibatalkan.'
                     )}
                   </div>
                 </div>
