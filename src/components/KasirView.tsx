@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   collection,
   onSnapshot,
@@ -43,15 +43,15 @@ const rupiah = (value: number) =>
 
 const statusLabels: Record<string, string> = {
   menunggu: 'Pesanan Baru',
-  diproses: 'Sedang Diproses',
+  diproses: 'Diproses',
   siap: 'Siap Disajikan',
   selesai: 'Selesai',
   dibatalkan: 'Dibatalkan'
 };
 
-function formatDate(value: unknown) {
+function getOrderDate(value: unknown): Date | null {
   try {
-    if (!value) return '-';
+    if (!value) return null;
 
     let date: Date;
 
@@ -66,18 +66,67 @@ function formatDate(value: unknown) {
       date = new Date(value as string | number);
     }
 
-    if (Number.isNaN(date.getTime())) return '-';
-
-    return date.toLocaleString('id-ID', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    return Number.isNaN(date.getTime()) ? null : date;
   } catch {
-    return '-';
+    return null;
   }
+}
+
+function getWibDateKey(value: unknown): string {
+  const date = getOrderDate(value);
+  if (!date) return 'tanggal-tidak-diketahui';
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+
+  const get = (type: string) =>
+    parts.find(part => part.type === type)?.value ?? '';
+
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+function getTodayWibKey(): string {
+  return getWibDateKey(new Date());
+}
+
+function formatDate(value: unknown) {
+  const date = getOrderDate(value);
+  if (!date) return '-';
+
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  }).format(date);
+}
+
+function formatGroupDate(key: string) {
+  if (key === 'tanggal-tidak-diketahui') {
+    return 'Tanggal Tidak Diketahui';
+  }
+
+  if (key === getTodayWibKey()) {
+    return 'Hari Ini';
+  }
+
+  const [year, month, day] = key.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 12));
+
+  return new Intl.DateTimeFormat('id-ID', {
+    timeZone: 'Asia/Jakarta',
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  }).format(date);
 }
 
 function statusColor(status: string) {
@@ -106,6 +155,10 @@ export default function KasirView() {
   const [selectedOrderId, setSelectedOrderId] = useState('');
   const [showDetail, setShowDetail] = useState(true);
 
+  const [collapsedGroups, setCollapsedGroups] = useState<
+    Record<string, boolean>
+  >({});
+
   const [detailItems, setDetailItems] = useState<OrderItem[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -114,6 +167,8 @@ export default function KasirView() {
 
   const [processingPayment, setProcessingPayment] = useState(false);
   const [processingStatus, setProcessingStatus] = useState(false);
+
+  const detailRef = useRef<HTMLDivElement>(null);
 
   const [receipt, setReceipt] = useState<{
     order: Order;
@@ -207,9 +262,45 @@ export default function KasirView() {
     return orders.filter(order =>
       String(order.order_code || '')
         .toLowerCase()
+        .includes(keyword) ||
+      String(order.customer_name || '')
+        .toLowerCase()
         .includes(keyword)
     );
   }, [orders, search]);
+
+  const groupedOrders = useMemo(() => {
+    const groups: Record<string, Order[]> = {};
+
+    filteredOrders.forEach(order => {
+      const key = getWibDateKey(order.created_at);
+
+      if (!groups[key]) {
+        groups[key] = [];
+      }
+
+      groups[key].push(order);
+    });
+
+    return Object.entries(groups).sort(([a], [b]) => {
+      if (a === 'tanggal-tidak-diketahui') return 1;
+      if (b === 'tanggal-tidak-diketahui') return -1;
+      return b.localeCompare(a);
+    });
+  }, [filteredOrders]);
+
+  useEffect(() => {
+    if (!selectedOrderId || !showDetail) return;
+
+    const timer = window.setTimeout(() => {
+      detailRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    }, 150);
+
+    return () => window.clearTimeout(timer);
+  }, [selectedOrderId, showDetail]);
 
   useEffect(() => {
     if (!selectedOrderId) {
@@ -264,6 +355,13 @@ export default function KasirView() {
       active = false;
     };
   }, [selectedOrderId]);
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(previous => ({
+      ...previous,
+      [key]: !previous[key]
+    }));
+  };
 
   const changeStatus = async (
     orderId: string,
@@ -380,6 +478,373 @@ export default function KasirView() {
     }
   };
 
+  const renderOrderList = () => (
+    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-lg font-extrabold text-gray-900">
+            Pesanan Masuk
+          </h2>
+          <p className="text-xs text-gray-500">
+            Pilih pesanan untuk melihat detail
+          </p>
+        </div>
+
+        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
+          {filteredOrders.length} Pesanan
+        </span>
+      </div>
+
+      <input
+        type="search"
+        value={search}
+        onChange={event => setSearch(event.target.value)}
+        placeholder="Cari nomor pesanan atau nama pelanggan..."
+        className="mb-4 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-green-600 focus:bg-white"
+      />
+
+      {loading ? (
+        <div className="py-10 text-center text-sm text-gray-500">
+          Memuat pesanan...
+        </div>
+      ) : filteredOrders.length === 0 ? (
+        <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
+          {search
+            ? 'Pesanan tidak ditemukan.'
+            : 'Belum ada pesanan masuk.'}
+        </div>
+      ) : (
+        <div className="max-h-[750px] space-y-4 overflow-y-auto pr-1">
+          {groupedOrders.map(([dateKey, dateOrders]) => {
+            const isToday = dateKey === getTodayWibKey();
+            const isSearching = Boolean(search.trim());
+
+            const isCollapsed = isSearching
+              ? false
+              : collapsedGroups[dateKey] ?? !isToday;
+
+            return (
+              <div
+                key={dateKey}
+                className="overflow-hidden rounded-xl border border-gray-200"
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(dateKey)}
+                  className="flex w-full items-center justify-between gap-3 bg-gray-50 px-3 py-3 text-left hover:bg-green-50"
+                >
+                  <div>
+                    <p className="text-sm font-extrabold text-gray-800">
+                      {formatGroupDate(dateKey)}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-500">
+                      {dateOrders.length} pesanan
+                    </p>
+                  </div>
+
+                  <span className="text-lg font-bold text-green-800">
+                    {isCollapsed ? '+' : '−'}
+                  </span>
+                </button>
+
+                {!isCollapsed && (
+                  <div className="space-y-2 p-2">
+                    {dateOrders.map(order => (
+                      <button
+                        key={order.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedOrderId(order.id);
+                          setPaymentMethod('tunai');
+                          setShowDetail(true);
+                          setError('');
+                        }}
+                        className={`w-full rounded-xl border p-3 text-left transition ${
+                          selectedOrderId === order.id && showDetail
+                            ? 'border-green-600 bg-green-50'
+                            : 'border-gray-100 bg-white hover:border-green-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate font-extrabold text-gray-900">
+                              {order.order_code}
+                            </p>
+                            <p className="mt-1 truncate text-sm text-gray-700">
+                              {order.customer_name}
+                            </p>
+                            <p className="mt-1 text-xs text-gray-500">
+                              Meja {String(order.table_number).padStart(2, '0')}
+                            </p>
+                          </div>
+
+                          <div className="flex shrink-0 flex-col items-end gap-2">
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusColor(order.status)}`}>
+                              {statusLabels[order.status] || order.status}
+                            </span>
+
+                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
+                              order.payment_status === 'lunas'
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {order.payment_status === 'lunas'
+                                ? 'LUNAS'
+                                : 'BELUM LUNAS'}
+                            </span>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderOrderDetail = () => (
+    <div
+      ref={detailRef}
+      className="scroll-mt-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm xl:col-span-2"
+    >
+      <div className="mb-1 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-extrabold text-gray-900">
+            Detail Pesanan
+          </h2>
+          <p className="text-xs text-gray-500">
+            Informasi lengkap pesanan yang dipilih
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowDetail(false)}
+          aria-label="Tutup detail pesanan"
+          title="Sembunyikan detail"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl font-bold text-gray-600 hover:bg-red-100 hover:text-red-700"
+        >
+          ×
+        </button>
+      </div>
+
+      <div className="mt-4">
+        {!selectedOrder ? (
+          <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
+            Pilih salah satu nomor pesanan untuk melihat detail.
+          </div>
+        ) : (
+          <>
+            <div className="space-y-2 rounded-xl bg-gray-50 p-3 text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500">Nomor</span>
+                <strong className="text-right">
+                  {selectedOrder.order_code}
+                </strong>
+              </div>
+
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500">Pelanggan</span>
+                <strong className="text-right">
+                  {selectedOrder.customer_name}
+                </strong>
+              </div>
+
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500">Meja</span>
+                <strong>
+                  {String(selectedOrder.table_number).padStart(2, '0')}
+                </strong>
+              </div>
+
+              <div className="flex justify-between gap-2">
+                <span className="text-gray-500">Waktu (WIB)</span>
+                <strong className="text-right text-xs">
+                  {formatDate(selectedOrder.created_at)}
+                </strong>
+              </div>
+            </div>
+
+            <div className="my-4">
+              <h3 className="mb-3 text-sm font-extrabold">
+                Rincian Menu
+              </h3>
+
+              {detailLoading ? (
+                <p className="py-5 text-center text-sm text-gray-500">
+                  Memuat rincian...
+                </p>
+              ) : detailItems.length === 0 ? (
+                <p className="rounded-lg bg-gray-50 p-4 text-center text-xs text-gray-500">
+                  Rincian menu tidak tersedia.
+                </p>
+              ) : (
+                <div className="max-h-60 space-y-3 overflow-y-auto">
+                  {detailItems.map((item, index) => (
+                    <div
+                      key={index}
+                      className="border-b border-gray-100 pb-2"
+                    >
+                      <div className="flex justify-between gap-2 text-sm">
+                        <span className="font-semibold">
+                          {item.item_name}
+                        </span>
+                        <span className="font-bold">
+                          {rupiah(item.subtotal)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {item.quantity} × {rupiah(item.item_price)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between border-t-2 border-gray-200 py-3 font-extrabold">
+              <span>TOTAL</span>
+              <span className="text-green-900">
+                {rupiah(selectedOrder.total_amount)}
+              </span>
+            </div>
+
+            <div className="mb-4 rounded-xl bg-gray-50 p-3">
+              <p className="text-xs text-gray-500">
+                STATUS PEMBAYARAN
+              </p>
+              <p className={`mt-1 font-extrabold ${
+                selectedOrder.payment_status === 'lunas'
+                  ? 'text-green-700'
+                  : 'text-amber-700'
+              }`}>
+                {selectedOrder.payment_status === 'lunas'
+                  ? 'SUDAH LUNAS'
+                  : 'BELUM LUNAS'}
+              </p>
+
+              {selectedOrder.payment_status === 'lunas' &&
+                selectedOrder.payment_method && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Metode: {selectedOrder.payment_method === 'tunai'
+                      ? 'Tunai'
+                      : 'Non-Tunai'}
+                  </p>
+                )}
+            </div>
+
+            <div className="mb-4">
+              <p className="mb-2 text-xs font-bold text-gray-600">
+                METODE PEMBAYARAN
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('tunai')}
+                  disabled={selectedOrder.payment_status === 'lunas'}
+                  className={`rounded-lg border p-3 text-sm font-bold ${
+                    paymentMethod === 'tunai'
+                      ? 'border-green-700 bg-green-100 text-green-900'
+                      : 'border-gray-200 bg-white text-gray-600'
+                  } disabled:opacity-50`}
+                >
+                  Tunai
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('non_tunai')}
+                  disabled={selectedOrder.payment_status === 'lunas'}
+                  className={`rounded-lg border p-3 text-sm font-bold ${
+                    paymentMethod === 'non_tunai'
+                      ? 'border-green-700 bg-green-100 text-green-900'
+                      : 'border-gray-200 bg-white text-gray-600'
+                  } disabled:opacity-50`}
+                >
+                  Non-Tunai
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => markPaid(selectedOrder)}
+              disabled={
+                selectedOrder.payment_status === 'lunas' ||
+                processingPayment ||
+                detailLoading
+              }
+              className="w-full rounded-xl bg-green-800 p-3 font-extrabold text-white shadow-sm hover:bg-green-900 disabled:cursor-not-allowed disabled:bg-gray-300"
+            >
+              {processingPayment
+                ? 'MENCATAT PEMBAYARAN...'
+                : selectedOrder.payment_status === 'lunas'
+                  ? 'SUDAH LUNAS'
+                  : 'CATAT LUNAS'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => printReceipt(selectedOrder)}
+              className="mt-2 w-full rounded-xl bg-gray-800 p-3 text-sm font-bold text-white hover:bg-gray-900"
+            >
+              CETAK STRUK
+            </button>
+
+            <div className="mt-4 border-t border-gray-100 pt-4">
+              <p className="mb-2 text-xs font-bold text-gray-600">
+                STATUS PESANAN
+              </p>
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => changeStatus(selectedOrder.id, 'diproses')}
+                  disabled={
+                    processingStatus ||
+                    ['selesai', 'dibatalkan', 'diproses'].includes(selectedOrder.status)
+                  }
+                  className="rounded-lg bg-blue-100 p-2 text-xs font-bold text-blue-800 disabled:opacity-40"
+                >
+                  Proses
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => changeStatus(selectedOrder.id, 'siap')}
+                  disabled={
+                    processingStatus ||
+                    ['selesai', 'dibatalkan', 'siap'].includes(selectedOrder.status)
+                  }
+                  className="rounded-lg bg-amber-100 p-2 text-xs font-bold text-amber-800 disabled:opacity-40"
+                >
+                  Siap
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => changeStatus(selectedOrder.id, 'selesai')}
+                  disabled={
+                    processingStatus ||
+                    ['selesai', 'dibatalkan'].includes(selectedOrder.status)
+                  }
+                  className="col-span-2 rounded-lg bg-emerald-100 p-2 text-xs font-bold text-emerald-800 disabled:opacity-40"
+                >
+                  Selesai
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <>
       <style>{`
@@ -454,7 +919,6 @@ export default function KasirView() {
           </aside>
 
           <section className="min-w-0 flex-1">
-
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="text-2xl font-extrabold text-green-950">
@@ -574,338 +1038,15 @@ export default function KasirView() {
             </div>
 
             <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
-
-              <div className={`rounded-2xl border border-gray-100 bg-white p-4 shadow-sm ${showDetail ? 'xl:col-span-3' : 'xl:col-span-1'}`}>
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-lg font-extrabold text-gray-900">
-                      Pesanan Masuk
-                    </h2>
-                    <p className="text-xs text-gray-500">
-                      Pilih nomor pesanan untuk melihat detail
-                    </p>
-                  </div>
-
-                  <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
-                    {filteredOrders.length} Pesanan
-                  </span>
-                </div>
-
-                <input
-                  type="search"
-                  value={search}
-                  onChange={event => setSearch(event.target.value)}
-                  placeholder="Cari nomor pesanan..."
-                  className="mb-4 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-green-600 focus:bg-white"
-                />
-
-                {loading ? (
-                  <div className="py-10 text-center text-sm text-gray-500">
-                    Memuat pesanan...
-                  </div>
-                ) : filteredOrders.length === 0 ? (
-                  <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
-                    {search
-                      ? 'Nomor pesanan tidak ditemukan.'
-                      : 'Belum ada pesanan masuk.'}
-                  </div>
-                ) : (
-                  <div className="max-h-[650px] space-y-3 overflow-y-auto pr-1">
-                    {filteredOrders.map(order => (
-                      <button
-                        key={order.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedOrderId(order.id);
-                          setPaymentMethod('tunai');
-                          setShowDetail(true);
-                          setError('');
-                        }}
-                        className={`w-full rounded-xl border p-3 text-left transition ${
-                          selectedOrderId === order.id && showDetail
-                            ? 'border-green-600 bg-green-50'
-                            : 'border-gray-100 bg-white hover:border-green-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <p className="font-extrabold text-gray-900">
-                              {order.order_code}
-                            </p>
-                            <p className="mt-1 text-sm text-gray-700">
-                              {order.customer_name}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              Meja {String(order.table_number).padStart(2, '0')}
-                            </p>
-                          </div>
-
-                          <div className="text-right">
-                            <span className={`rounded-full px-2 py-1 text-xs font-bold ${statusColor(order.status)}`}>
-                              {statusLabels[order.status] || order.status}
-                            </span>
-
-                            <p className={`mt-2 text-xs font-bold ${
-                              order.payment_status === 'lunas'
-                                ? 'text-green-700'
-                                : 'text-amber-700'
-                            }`}>
-                              {order.payment_status === 'lunas'
-                                ? 'LUNAS'
-                                : 'BELUM LUNAS'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2">
-                          <span className="text-xs text-gray-400">
-                            {formatDate(order.created_at)}
-                          </span>
-                          <span className="font-extrabold text-green-900">
-                            {rupiah(order.total_amount)}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               {showDetail && (
-                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm xl:col-span-2">
-                  <div className="mb-1 flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-extrabold text-gray-900">
-                        Detail Pesanan
-                      </h2>
-                      <p className="text-xs text-gray-500">
-                        Informasi lengkap pesanan yang dipilih
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setShowDetail(false)}
-                      aria-label="Tutup detail pesanan"
-                      title="Sembunyikan detail"
-                      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl font-bold text-gray-600 hover:bg-red-100 hover:text-red-700"
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  <div className="mt-4">
-                    {!selectedOrder ? (
-                      <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
-                        Pilih salah satu nomor pesanan untuk melihat detail.
-                      </div>
-                    ) : (
-                      <>
-                        <div className="space-y-2 rounded-xl bg-gray-50 p-3 text-sm">
-                          <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">Nomor</span>
-                            <strong className="text-right">
-                              {selectedOrder.order_code}
-                            </strong>
-                          </div>
-
-                          <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">Pelanggan</span>
-                            <strong className="text-right">
-                              {selectedOrder.customer_name}
-                            </strong>
-                          </div>
-
-                          <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">Meja</span>
-                            <strong>
-                              {String(selectedOrder.table_number).padStart(2, '0')}
-                            </strong>
-                          </div>
-
-                          <div className="flex justify-between gap-2">
-                            <span className="text-gray-500">Waktu</span>
-                            <strong className="text-right text-xs">
-                              {formatDate(selectedOrder.created_at)}
-                            </strong>
-                          </div>
-                        </div>
-
-                        <div className="my-4">
-                          <h3 className="mb-3 text-sm font-extrabold">
-                            Rincian Menu
-                          </h3>
-
-                          {detailLoading ? (
-                            <p className="py-5 text-center text-sm text-gray-500">
-                              Memuat rincian...
-                            </p>
-                          ) : detailItems.length === 0 ? (
-                            <p className="rounded-lg bg-gray-50 p-4 text-center text-xs text-gray-500">
-                              Rincian menu tidak tersedia.
-                            </p>
-                          ) : (
-                            <div className="max-h-60 space-y-3 overflow-y-auto">
-                              {detailItems.map((item, index) => (
-                                <div
-                                  key={index}
-                                  className="border-b border-gray-100 pb-2"
-                                >
-                                  <div className="flex justify-between gap-2 text-sm">
-                                    <span className="font-semibold">
-                                      {item.item_name}
-                                    </span>
-                                    <span className="font-bold">
-                                      {rupiah(item.subtotal)}
-                                    </span>
-                                  </div>
-                                  <p className="mt-1 text-xs text-gray-500">
-                                    {item.quantity} × {rupiah(item.item_price)}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex justify-between border-t-2 border-gray-200 py-3 font-extrabold">
-                          <span>TOTAL</span>
-                          <span className="text-green-900">
-                            {rupiah(selectedOrder.total_amount)}
-                          </span>
-                        </div>
-
-                        <div className="mb-4 rounded-xl bg-gray-50 p-3">
-                          <p className="text-xs text-gray-500">
-                            STATUS PEMBAYARAN
-                          </p>
-                          <p className={`mt-1 font-extrabold ${
-                            selectedOrder.payment_status === 'lunas'
-                              ? 'text-green-700'
-                              : 'text-amber-700'
-                          }`}>
-                            {selectedOrder.payment_status === 'lunas'
-                              ? 'SUDAH LUNAS'
-                              : 'BELUM LUNAS'}
-                          </p>
-
-                          {selectedOrder.payment_status === 'lunas' &&
-                            selectedOrder.payment_method && (
-                              <p className="mt-1 text-xs text-gray-500">
-                                Metode: {selectedOrder.payment_method === 'tunai'
-                                  ? 'Tunai'
-                                  : 'Non-Tunai'}
-                              </p>
-                            )}
-                        </div>
-
-                        <div className="mb-4">
-                          <p className="mb-2 text-xs font-bold text-gray-600">
-                            METODE PEMBAYARAN
-                          </p>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setPaymentMethod('tunai')}
-                              disabled={selectedOrder.payment_status === 'lunas'}
-                              className={`rounded-lg border p-3 text-sm font-bold ${
-                                paymentMethod === 'tunai'
-                                  ? 'border-green-700 bg-green-100 text-green-900'
-                                  : 'border-gray-200 bg-white text-gray-600'
-                              } disabled:opacity-50`}
-                            >
-                              Tunai
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => setPaymentMethod('non_tunai')}
-                              disabled={selectedOrder.payment_status === 'lunas'}
-                              className={`rounded-lg border p-3 text-sm font-bold ${
-                                paymentMethod === 'non_tunai'
-                                  ? 'border-green-700 bg-green-100 text-green-900'
-                                  : 'border-gray-200 bg-white text-gray-600'
-                              } disabled:opacity-50`}
-                            >
-                              Non-Tunai
-                            </button>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => markPaid(selectedOrder)}
-                          disabled={
-                            selectedOrder.payment_status === 'lunas' ||
-                            processingPayment ||
-                            detailLoading
-                          }
-                          className="w-full rounded-xl bg-green-800 p-3 font-extrabold text-white shadow-sm hover:bg-green-900 disabled:cursor-not-allowed disabled:bg-gray-300"
-                        >
-                          {processingPayment
-                            ? 'MENCATAT PEMBAYARAN...'
-                            : selectedOrder.payment_status === 'lunas'
-                              ? 'SUDAH LUNAS'
-                              : 'CATAT LUNAS'}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => printReceipt(selectedOrder)}
-                          className="mt-2 w-full rounded-xl bg-gray-800 p-3 text-sm font-bold text-white hover:bg-gray-900"
-                        >
-                          CETAK STRUK
-                        </button>
-
-                        <div className="mt-4 border-t border-gray-100 pt-4">
-                          <p className="mb-2 text-xs font-bold text-gray-600">
-                            STATUS PESANAN
-                          </p>
-
-                          <div className="grid grid-cols-2 gap-2">
-                            <button
-                              type="button"
-                              onClick={() => changeStatus(selectedOrder.id, 'diproses')}
-                              disabled={
-                                processingStatus ||
-                                ['selesai', 'dibatalkan', 'diproses'].includes(selectedOrder.status)
-                              }
-                              className="rounded-lg bg-blue-100 p-2 text-xs font-bold text-blue-800 disabled:opacity-40"
-                            >
-                              Proses
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => changeStatus(selectedOrder.id, 'siap')}
-                              disabled={
-                                processingStatus ||
-                                ['selesai', 'dibatalkan', 'siap'].includes(selectedOrder.status)
-                              }
-                              className="rounded-lg bg-amber-100 p-2 text-xs font-bold text-amber-800 disabled:opacity-40"
-                            >
-                              Siap
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => changeStatus(selectedOrder.id, 'selesai')}
-                              disabled={
-                                processingStatus ||
-                                ['selesai', 'dibatalkan'].includes(selectedOrder.status)
-                              }
-                              className="col-span-2 rounded-lg bg-emerald-100 p-2 text-xs font-bold text-emerald-800 disabled:opacity-40"
-                            >
-                              Selesai
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
+                <div className="order-1 xl:order-2">
+                  {renderOrderDetail()}
                 </div>
               )}
+
+              <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
+                {renderOrderList()}
+              </div>
             </div>
 
             <p className="mt-5 text-center text-xs text-gray-400">
