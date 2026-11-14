@@ -45,6 +45,10 @@ type Order = {
 type OrderGroup = [string, Order[]];
 type ReportFilter = 'today' | 'yesterday' | 'last7' | 'custom';
 
+const TOTAL_TABLES = 50;
+
+const ACTIVE_STATUSES = ['menunggu', 'diproses', 'siap'];
+
 const cashierNavigation: {
   id: CashierPage;
   label: string;
@@ -214,7 +218,6 @@ export default function KasirView() {
     items: OrderItem[];
   } | null>(null);
 
-  // State filter Laporan Kas
   const [reportFilter, setReportFilter] = useState<ReportFilter>('today');
   const [reportStartDate, setReportStartDate] = useState(getTodayWibKey());
   const [reportEndDate, setReportEndDate] = useState(getTodayWibKey());
@@ -295,9 +298,7 @@ export default function KasirView() {
   );
 
   const activeOrders = useMemo(
-    () => orders.filter(order =>
-      ['menunggu', 'diproses', 'siap'].includes(order.status)
-    ),
+    () => orders.filter(order => ACTIVE_STATUSES.includes(order.status)),
     [orders]
   );
 
@@ -338,7 +339,47 @@ export default function KasirView() {
     [filteredHistoryOrders]
   );
 
-  // Data laporan hanya menghitung transaksi lunas dan bukan dibatalkan.
+  // Status meja dihitung dari pesanan aktif, bukan status pembayaran.
+  // Satu meja tetap terisi jika masih memiliki minimal satu pesanan aktif.
+  const tableStatuses = useMemo(() => {
+    return Array.from({ length: TOTAL_TABLES }, (_, index) => {
+      const tableNumber = index + 1;
+
+      const tableOrders = activeOrders
+        .filter(order => Number(order.table_number) === tableNumber)
+        .sort((a, b) => {
+          const dateA = getOrderDate(a.created_at)?.getTime() ?? 0;
+          const dateB = getOrderDate(b.created_at)?.getTime() ?? 0;
+          return dateA - dateB;
+        });
+
+      return {
+        tableNumber,
+        orders: tableOrders,
+        occupied: tableOrders.length > 0
+      };
+    });
+  }, [activeOrders]);
+
+  const occupiedTableCount = useMemo(
+    () => tableStatuses.filter(table => table.occupied).length,
+    [tableStatuses]
+  );
+
+  const emptyTableCount = TOTAL_TABLES - occupiedTableCount;
+
+  const unassignedActiveOrders = useMemo(
+    () => activeOrders.filter(order => {
+      const tableNumber = Number(order.table_number);
+      return (
+        !Number.isInteger(tableNumber) ||
+        tableNumber < 1 ||
+        tableNumber > TOTAL_TABLES
+      );
+    }),
+    [activeOrders]
+  );
+
   const reportData = useMemo(() => {
     const today = getTodayWibKey();
 
@@ -487,7 +528,7 @@ export default function KasirView() {
     if (
       activePage === 'pesanan' &&
       selectedOrder &&
-      !['menunggu', 'diproses', 'siap'].includes(selectedOrder.status)
+      !ACTIVE_STATUSES.includes(selectedOrder.status)
     ) {
       setSelectedOrderId('');
       setShowDetail(true);
@@ -622,6 +663,176 @@ export default function KasirView() {
       setError('Gagal mengambil rincian struk.');
     }
   };
+
+  const renderTableStatus = () => (
+    <>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold text-green-950">Status Meja</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            Pemantauan kondisi 50 meja berdasarkan pesanan yang masih aktif
+          </p>
+        </div>
+        <span className="rounded-xl border border-green-100 bg-white px-4 py-2 text-xs font-bold text-green-900">
+          Pembaruan Realtime
+        </span>
+      </div>
+
+      <div className="mb-5 grid grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-green-500" />
+            <p className="text-xs font-bold text-gray-500">MEJA KOSONG</p>
+          </div>
+          <p className="mt-2 text-3xl font-extrabold text-green-800">
+            {loading ? '—' : emptyTableCount}
+          </p>
+          <p className="mt-1 text-xs text-gray-400">Siap digunakan</p>
+        </div>
+
+        <div className="rounded-2xl border border-red-100 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-red-500" />
+            <p className="text-xs font-bold text-gray-500">MEJA TERISI</p>
+          </div>
+          <p className="mt-2 text-3xl font-extrabold text-red-700">
+            {loading ? '—' : occupiedTableCount}
+          </p>
+          <p className="mt-1 text-xs text-gray-400">Masih ada pesanan aktif</p>
+        </div>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-gray-100 bg-white p-3 text-xs font-semibold text-gray-600">
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded bg-green-500" />
+          Kosong
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded bg-red-500" />
+          Terisi
+        </span>
+        <span className="text-gray-400">Status mengikuti pesanan aktif</span>
+      </div>
+
+      {loading ? (
+        <div className="rounded-2xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-500">
+          Memuat status meja...
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-extrabold text-gray-900">Denah Status Meja</h2>
+              <p className="text-xs text-gray-500">Meja 01 sampai 50</p>
+            </div>
+            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
+              {TOTAL_TABLES} Meja
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+            {tableStatuses.map(table => (
+              <div
+                key={table.tableNumber}
+                className={`min-w-0 rounded-xl border p-3 ${
+                  table.occupied
+                    ? 'border-red-200 bg-red-50'
+                    : 'border-green-200 bg-green-50'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-1">
+                  <span className={`text-xs font-bold ${
+                    table.occupied ? 'text-red-700' : 'text-green-700'
+                  }`}>
+                    MEJA
+                  </span>
+                  <span className={`h-2.5 w-2.5 rounded-full ${
+                    table.occupied ? 'bg-red-500' : 'bg-green-500'
+                  }`} />
+                </div>
+
+                <p className={`my-2 text-2xl font-extrabold ${
+                  table.occupied ? 'text-red-800' : 'text-green-800'
+                }`}>
+                  {String(table.tableNumber).padStart(2, '0')}
+                </p>
+
+                <span className={`inline-block rounded-full px-2 py-1 text-[10px] font-extrabold ${
+                  table.occupied
+                    ? 'bg-red-100 text-red-800'
+                    : 'bg-green-100 text-green-800'
+                }`}>
+                  {table.occupied ? 'TERISI' : 'KOSONG'}
+                </span>
+
+                {table.occupied && (
+                  <div className="mt-3 space-y-2 border-t border-red-200 pt-2">
+                    <p className="text-[10px] font-bold text-red-800">
+                      {table.orders.length} PESANAN AKTIF
+                    </p>
+                    {table.orders.map(order => (
+                      <div key={order.id} className="min-w-0">
+                        <p className="break-words text-xs font-extrabold text-gray-800">
+                          {order.order_code || 'Tanpa nomor'}
+                        </p>
+                        <p className="break-words text-[11px] text-gray-600">
+                          {order.customer_name || 'Pelanggan'}
+                        </p>
+                        <p className="mt-1 text-[10px] font-bold text-red-700">
+                          {statusLabels[order.status] || order.status}
+                        </p>
+                        <p className={`text-[10px] font-semibold ${
+                          order.payment_status === 'lunas'
+                            ? 'text-green-700'
+                            : 'text-amber-700'
+                        }`}>
+                          {order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {unassignedActiveOrders.length > 0 && (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <h3 className="text-sm font-extrabold text-amber-900">
+            Perlu Pemeriksaan Nomor Meja
+          </h3>
+          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+            Ada {unassignedActiveOrders.length} pesanan aktif dengan nomor meja
+            di luar rentang 01–50 atau nomor meja yang tidak valid. Pesanan
+            tersebut tidak dimasukkan ke kartu meja.
+          </p>
+          <div className="mt-3 space-y-2">
+            {unassignedActiveOrders.map(order => (
+              <div key={order.id} className="rounded-lg bg-white p-3 text-xs">
+                <p className="font-bold text-gray-800">{order.order_code}</p>
+                <p className="mt-1 text-gray-600">{order.customer_name}</p>
+                <p className="mt-1 text-amber-800">
+                  Nomor meja: {String(order.table_number)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
+        <p className="text-xs font-extrabold text-blue-900">INFORMASI STATUS MEJA</p>
+        <p className="mt-1 text-xs leading-relaxed text-blue-800">
+          Meja baru dianggap kosong apabila tidak memiliki pesanan berstatus
+          Pesanan Baru, Diproses, atau Siap Disajikan. Pembayaran LUNAS tidak
+          otomatis mengubah status meja. Halaman ini hanya untuk pemantauan,
+          bukan untuk mengubah status pesanan.
+        </p>
+      </div>
+    </>
+  );
 
   const renderOrderList = (
     groups: OrderGroup[],
@@ -1105,11 +1316,11 @@ export default function KasirView() {
         </p>
       </div>
 
-      {reportData.invalidRange ? (
+      {reportData.invalidRange && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           Periksa kembali rentang tanggal yang dipilih.
         </div>
-      ) : null}
+      )}
 
       <div className="mb-4 rounded-2xl bg-green-900 p-4 text-white shadow-md sm:p-5">
         <p className="text-xs font-semibold text-green-200">TOTAL PEMASUKAN PERIODE INI</p>
@@ -1127,18 +1338,14 @@ export default function KasirView() {
           <p className="mt-2 text-lg font-extrabold text-green-800">
             {rupiah(reportData.cashIncome)}
           </p>
-          <p className="mt-1 text-xs text-gray-400">
-            {reportData.cashCount} transaksi
-          </p>
+          <p className="mt-1 text-xs text-gray-400">{reportData.cashCount} transaksi</p>
         </div>
         <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
           <p className="text-xs font-semibold text-gray-500">PEMASUKAN NON-TUNAI</p>
           <p className="mt-2 text-lg font-extrabold text-blue-800">
             {rupiah(reportData.nonCashIncome)}
           </p>
-          <p className="mt-1 text-xs text-gray-400">
-            {reportData.nonCashCount} transaksi
-          </p>
+          <p className="mt-1 text-xs text-gray-400">{reportData.nonCashCount} transaksi</p>
         </div>
       </div>
 
@@ -1493,6 +1700,8 @@ export default function KasirView() {
               </>
             ) : activePage === 'laporan' ? (
               renderReport()
+            ) : activePage === 'meja' ? (
+              renderTableStatus()
             ) : (
               <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center gap-3">
