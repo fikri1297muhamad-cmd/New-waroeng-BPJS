@@ -8,7 +8,8 @@ import {
   updateDoc,
   doc,
   where,
-  getDocs
+  getDocs,
+  getDoc
 } from 'firebase/firestore';
 
 import { db, auth } from '../firebase';
@@ -40,13 +41,18 @@ type Order = {
   payment_method?: PaymentMethod;
   created_at: unknown;
   paid_at?: unknown;
+  paid_by?: string;
 };
 
 type OrderGroup = [string, Order[]];
 type ReportFilter = 'today' | 'yesterday' | 'last7' | 'custom';
 
-const TOTAL_TABLES = 50;
+type CashierProfile = {
+  full_name?: string;
+  role?: string;
+};
 
+const TOTAL_TABLES = 50;
 const ACTIVE_STATUSES = ['menunggu', 'diproses', 'siap'];
 
 const cashierNavigation: {
@@ -222,6 +228,14 @@ export default function KasirView() {
   const [reportStartDate, setReportStartDate] = useState(getTodayWibKey());
   const [reportEndDate, setReportEndDate] = useState(getTodayWibKey());
 
+  // Data akun kasir yang sedang login pada perangkat ini.
+  const currentUser = auth.currentUser;
+  const cashierUid = currentUser?.uid ?? '';
+  const cashierEmail = currentUser?.email ?? '';
+  const [cashierProfile, setCashierProfile] = useState<CashierProfile | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [profileError, setProfileError] = useState('');
+
   useEffect(() => {
     const ordersQuery = query(
       collection(db, 'orders'),
@@ -248,7 +262,62 @@ export default function KasirView() {
     );
   }, []);
 
-  const selectedOrder = orders.find(order => order.id === selectedOrderId) ?? null;
+  // Membaca dokumen profil milik akun yang sedang login.
+  useEffect(() => {
+    let active = true;
+
+    const loadCashierProfile = async () => {
+      setProfileLoading(true);
+      setProfileError('');
+      setCashierProfile(null);
+
+      const user = auth.currentUser;
+
+      if (!user) {
+        if (active) {
+          setProfileLoading(false);
+          setProfileError('Tidak ada akun kasir yang sedang login.');
+        }
+        return;
+      }
+
+      try {
+        const profileSnapshot = await getDoc(
+          doc(db, 'staff_profiles', user.uid)
+        );
+
+        if (!profileSnapshot.exists()) {
+          throw new Error('Profil staf tidak ditemukan.');
+        }
+
+        const profile = profileSnapshot.data() as CashierProfile;
+
+        if (active) {
+          setCashierProfile(profile);
+        }
+      } catch (err) {
+        console.error('Gagal membaca profil kasir:', err);
+        if (active) {
+          setProfileError(
+            err instanceof Error
+              ? err.message
+              : 'Profil kasir gagal dimuat.'
+          );
+        }
+      } finally {
+        if (active) setProfileLoading(false);
+      }
+    };
+
+    loadCashierProfile();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedOrder =
+    orders.find(order => order.id === selectedOrderId) ?? null;
 
   const summary = useMemo(() => {
     const paidOrders = orders.filter(order => order.payment_status === 'lunas');
@@ -339,8 +408,7 @@ export default function KasirView() {
     [filteredHistoryOrders]
   );
 
-  // Status meja dihitung dari pesanan aktif, bukan status pembayaran.
-  // Satu meja tetap terisi jika masih memiliki minimal satu pesanan aktif.
+  // Status meja berdasarkan pesanan aktif, bukan status pembayaran.
   const tableStatuses = useMemo(() => {
     return Array.from({ length: TOTAL_TABLES }, (_, index) => {
       const tableNumber = index + 1;
@@ -461,6 +529,23 @@ export default function KasirView() {
       paidWithoutDateIncome: sumAmount(paidWithoutDate)
     };
   }, [orders, reportFilter, reportStartDate, reportEndDate]);
+
+  // Riwayat pembayaran hanya menampilkan pembayaran oleh UID kasir ini.
+  const cashierPaymentHistory = useMemo(() => {
+    if (!cashierUid) return [];
+
+    return orders
+      .filter(order =>
+        order.payment_status === 'lunas' &&
+        order.paid_by === cashierUid &&
+        Boolean(getOrderDate(order.paid_at))
+      )
+      .sort((a, b) => {
+        const dateA = getOrderDate(a.paid_at)?.getTime() ?? 0;
+        const dateB = getOrderDate(b.paid_at)?.getTime() ?? 0;
+        return dateB - dateA;
+      });
+  }, [orders, cashierUid]);
 
   useEffect(() => {
     if (!selectedOrderId || !showDetail) return;
@@ -598,13 +683,13 @@ export default function KasirView() {
     setError('');
 
     try {
-      const currentUser = auth.currentUser;
+      const user = auth.currentUser;
 
-      if (!currentUser) {
+      if (!user) {
         throw new Error('Sesi login berakhir. Silakan login kembali.');
       }
 
-      const idToken = await currentUser.getIdToken();
+      const idToken = await user.getIdToken();
 
       const response = await fetch('/api/record-payment', {
         method: 'POST',
@@ -833,435 +918,450 @@ export default function KasirView() {
       </div>
     </>
   );
-
+  
   const renderOrderList = (
     groups: OrderGroup[],
-    count: number,
-    heading: string,
-    emptyMessage: string
-  ) => (
-    <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-extrabold text-gray-900">{heading}</h2>
-          <p className="text-xs text-gray-500">Pilih pesanan untuk melihat detail</p>
-        </div>
-        <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
-          {count} Pesanan
-        </span>
-      </div>
-
-      <input
-        type="search"
-        value={search}
-        onChange={event => setSearch(event.target.value)}
-        placeholder="Cari nomor pesanan atau nama pelanggan..."
-        className="mb-4 w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm outline-none focus:border-green-600 focus:bg-white"
-      />
-
-      {loading ? (
-        <div className="py-10 text-center text-sm text-gray-500">Memuat pesanan...</div>
-      ) : count === 0 ? (
-        <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
-          {search ? 'Pesanan tidak ditemukan.' : emptyMessage}
-        </div>
-      ) : (
-        <div className="max-h-[750px] space-y-4 overflow-y-auto pr-1">
-          {groups.map(([dateKey, dateOrders]) => {
-            const isToday = dateKey === getTodayWibKey();
-            const isSearching = Boolean(search.trim());
-            const isCollapsed = isSearching
-              ? false
-              : collapsedGroups[dateKey] ?? !isToday;
-
-            return (
-              <div key={dateKey} className="overflow-hidden rounded-xl border border-gray-200">
-                <button
-                  type="button"
-                  onClick={() => toggleGroup(dateKey)}
-                  className="flex w-full items-center justify-between gap-3 bg-gray-50 px-3 py-3 text-left hover:bg-green-50"
-                >
-                  <div>
-                    <p className="text-sm font-extrabold text-gray-800">
-                      {formatGroupDate(dateKey)}
-                    </p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      {dateOrders.length} pesanan
-                    </p>
-                  </div>
-                  <span className="text-lg font-bold text-green-800">
-                    {isCollapsed ? '+' : '−'}
-                  </span>
-                </button>
-
-                {!isCollapsed && (
-                  <div className="space-y-2 p-2">
-                    {dateOrders.map(order => (
-                      <button
-                        key={order.id}
-                        type="button"
-                        onClick={() => {
-                          setSelectedOrderId(order.id);
-                          setPaymentMethod('tunai');
-                          setShowDetail(true);
-                          setError('');
-                        }}
-                        className={`w-full rounded-xl border p-3 text-left transition ${
-                          selectedOrderId === order.id && showDetail
-                            ? 'border-green-600 bg-green-50'
-                            : 'border-gray-100 bg-white hover:border-green-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate font-extrabold text-gray-900">
-                              {order.order_code}
-                            </p>
-                            <p className="mt-1 truncate text-sm text-gray-700">
-                              {order.customer_name}
-                            </p>
-                            <p className="mt-1 text-xs text-gray-500">
-                              Meja {String(order.table_number).padStart(2, '0')}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-2">
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusColor(order.status)}`}>
-                              {statusLabels[order.status] || order.status}
-                            </span>
-                            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
-                              order.payment_status === 'lunas'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-
-  const renderOrderDetail = () => (
-    <div
-      ref={detailRef}
-      className="scroll-mt-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm xl:col-span-2"
-    >
-      <div className="mb-1 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold text-gray-900">Detail Pesanan</h2>
-          <p className="text-xs text-gray-500">Informasi lengkap pesanan yang dipilih</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowDetail(false)}
-          aria-label="Tutup detail pesanan"
-          title="Sembunyikan detail"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl font-bold text-gray-600 hover:bg-red-100 hover:text-red-700"
-        >
-          ×
-        </button>
-      </div>
-
-      <div className="mt-4">
-        {!selectedOrder ? (
-          <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
-            Pilih salah satu nomor pesanan untuk melihat detail.
-          </div>
-        ) : (
-          <>
-            <div className="space-y-2 rounded-xl bg-gray-50 p-3 text-sm">
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-500">Nomor</span>
-                <strong className="text-right">{selectedOrder.order_code}</strong>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-500">Pelanggan</span>
-                <strong className="text-right">{selectedOrder.customer_name}</strong>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-500">Meja</span>
-                <strong>{String(selectedOrder.table_number).padStart(2, '0')}</strong>
-              </div>
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-500">Waktu (WIB)</span>
-                <strong className="text-right text-xs">{formatDate(selectedOrder.created_at)}</strong>
-              </div>
-            </div>
-
-            <div className="my-4">
-              <h3 className="mb-3 text-sm font-extrabold">Rincian Menu</h3>
-              {detailLoading ? (
-                <p className="py-5 text-center text-sm text-gray-500">Memuat rincian...</p>
-              ) : detailItems.length === 0 ? (
-                <p className="rounded-lg bg-gray-50 p-4 text-center text-xs text-gray-500">
-                  Rincian menu tidak tersedia.
-                </p>
-              ) : (
-                <div className="max-h-60 space-y-3 overflow-y-auto">
-                  {detailItems.map((item, index) => (
-                    <div key={index} className="border-b border-gray-100 pb-2">
-                      <div className="flex justify-between gap-2 text-sm">
-                        <span className="font-semibold">{item.item_name}</span>
-                        <span className="font-bold">{rupiah(item.subtotal)}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {item.quantity} × {rupiah(item.item_price)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-between border-t-2 border-gray-200 py-3 font-extrabold">
-              <span>TOTAL</span>
-              <span className="text-green-900">{rupiah(selectedOrder.total_amount)}</span>
-            </div>
-
-            <div className="mb-4 rounded-xl bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">STATUS PEMBAYARAN</p>
-              <p className={`mt-1 font-extrabold ${
-                selectedOrder.payment_status === 'lunas' ? 'text-green-700' : 'text-amber-700'
-              }`}>
-                {selectedOrder.payment_status === 'lunas' ? 'SUDAH LUNAS' : 'BELUM LUNAS'}
-              </p>
-              {selectedOrder.payment_status === 'lunas' && selectedOrder.payment_method && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Metode: {selectedOrder.payment_method === 'tunai' ? 'Tunai' : 'Non-Tunai'}
-                </p>
-              )}
-            </div>
-
-            <div className="mb-4">
-              <p className="mb-2 text-xs font-bold text-gray-600">METODE PEMBAYARAN</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('tunai')}
-                  disabled={selectedOrder.payment_status === 'lunas'}
-                  className={`rounded-lg border p-3 text-sm font-bold ${
-                    paymentMethod === 'tunai'
-                      ? 'border-green-700 bg-green-100 text-green-900'
-                      : 'border-gray-200 bg-white text-gray-600'
-                  } disabled:opacity-50`}
-                >
-                  Tunai
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('non_tunai')}
-                  disabled={selectedOrder.payment_status === 'lunas'}
-                  className={`rounded-lg border p-3 text-sm font-bold ${
-                    paymentMethod === 'non_tunai'
-                      ? 'border-green-700 bg-green-100 text-green-900'
-                      : 'border-gray-200 bg-white text-gray-600'
-                  } disabled:opacity-50`}
-                >
-                  Non-Tunai
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => markPaid(selectedOrder)}
-              disabled={selectedOrder.payment_status === 'lunas' || processingPayment || detailLoading}
-              className="w-full rounded-xl bg-green-800 p-3 font-extrabold text-white shadow-sm hover:bg-green-900 disabled:cursor-not-allowed disabled:bg-gray-300"
-            >
-              {processingPayment
-                ? 'MENCATAT PEMBAYARAN...'
-                : selectedOrder.payment_status === 'lunas'
-                  ? 'SUDAH LUNAS'
-                  : 'CATAT LUNAS'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => printReceipt(selectedOrder)}
-              className="mt-2 w-full rounded-xl bg-gray-800 p-3 text-sm font-bold text-white hover:bg-gray-900"
-            >
-              CETAK STRUK
-            </button>
-
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <p className="mb-2 text-xs font-bold text-gray-600">STATUS PESANAN</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => changeStatus(selectedOrder.id, 'diproses')}
-                  disabled={processingStatus || selectedOrder.status !== 'menunggu'}
-                  className="rounded-lg bg-blue-100 p-2 text-xs font-bold text-blue-800 disabled:opacity-40"
-                >
-                  Proses
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeStatus(selectedOrder.id, 'siap')}
-                  disabled={processingStatus || selectedOrder.status !== 'diproses'}
-                  className="rounded-lg bg-amber-100 p-2 text-xs font-bold text-amber-800 disabled:opacity-40"
-                >
-                  Siap Disajikan
-                </button>
-                <button
-                  type="button"
-                  onClick={() => changeStatus(selectedOrder.id, 'selesai')}
-                  disabled={processingStatus || selectedOrder.status !== 'siap'}
-                  className="col-span-2 rounded-lg bg-emerald-100 p-2 text-xs font-bold text-emerald-800 disabled:opacity-40"
-                >
-                  Selesai
-                </button>
-              </div>
-              <p className="mt-3 text-xs leading-relaxed text-gray-500">
-                Urutan pelayanan: Pesanan Baru → Diproses → Siap Disajikan → Selesai.
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-
-  const renderHistoryDetail = () => (
-    <div
-      ref={detailRef}
-      className="scroll-mt-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm xl:col-span-2"
-    >
-      <div className="mb-1 flex items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-extrabold text-gray-900">Detail Riwayat Pesanan</h2>
-          <p className="text-xs text-gray-500">
-            Informasi pesanan yang sudah selesai atau dibatalkan
+    mode: 'active' | 'history' | 'dashboard'
+  ) => {
+    if (groups.length === 0) {
+      return (
+        <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center">
+          <p className="text-3xl">📋</p>
+          <p className="mt-3 font-bold text-gray-700">
+            {search ? 'Pesanan tidak ditemukan' : 'Belum ada pesanan'}
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Pesanan akan muncul di sini setelah diterima sistem.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowDetail(false)}
-          aria-label="Tutup detail riwayat"
-          title="Sembunyikan detail"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-100 text-xl font-bold text-gray-600 hover:bg-red-100 hover:text-red-700"
-        >
-          ×
-        </button>
-      </div>
+      );
+    }
 
-      <div className="mt-4">
-        {!selectedOrder || !['selesai', 'dibatalkan'].includes(selectedOrder.status) ? (
-          <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
-            Pilih pesanan selesai atau dibatalkan untuk melihat detail.
-          </div>
-        ) : (
-          <>
-            <div className="mb-4 rounded-xl bg-gray-50 p-3 text-sm">
-              <div className="flex justify-between gap-2">
-                <span className="text-gray-500">Nomor Pesanan</span>
-                <strong className="text-right">{selectedOrder.order_code}</strong>
-              </div>
-              <div className="mt-2 flex justify-between gap-2">
-                <span className="text-gray-500">Pelanggan</span>
-                <strong className="text-right">{selectedOrder.customer_name}</strong>
-              </div>
-              <div className="mt-2 flex justify-between gap-2">
-                <span className="text-gray-500">Meja</span>
-                <strong>{String(selectedOrder.table_number).padStart(2, '0')}</strong>
-              </div>
-              <div className="mt-2 flex justify-between gap-2">
-                <span className="text-gray-500">Waktu (WIB)</span>
-                <strong className="text-right text-xs">{formatDate(selectedOrder.created_at)}</strong>
-              </div>
-              <div className="mt-3 border-t border-gray-200 pt-3">
-                <span className="text-xs font-bold text-gray-500">STATUS PESANAN</span>
-                <p className={`mt-1 inline-block rounded-full px-3 py-1 text-xs font-extrabold ${statusColor(selectedOrder.status)}`}>
-                  {statusLabels[selectedOrder.status] || selectedOrder.status}
-                </p>
-              </div>
-            </div>
-
-            <div className="my-4">
-              <h3 className="mb-3 text-sm font-extrabold">Rincian Menu</h3>
-              {detailLoading ? (
-                <p className="py-5 text-center text-sm text-gray-500">Memuat rincian...</p>
-              ) : detailItems.length === 0 ? (
-                <p className="rounded-lg bg-gray-50 p-4 text-center text-xs text-gray-500">
-                  Rincian menu tidak tersedia.
-                </p>
-              ) : (
-                <div className="max-h-60 space-y-3 overflow-y-auto">
-                  {detailItems.map((item, index) => (
-                    <div key={index} className="border-b border-gray-100 pb-2">
-                      <div className="flex justify-between gap-2 text-sm">
-                        <span className="font-semibold">{item.item_name}</span>
-                        <span className="font-bold">{rupiah(item.subtotal)}</span>
-                      </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {item.quantity} × {rupiah(item.item_price)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-between border-t-2 border-gray-200 py-3 font-extrabold">
-              <span>TOTAL</span>
-              <span className="text-green-900">{rupiah(selectedOrder.total_amount)}</span>
-            </div>
-
-            <div className="mb-4 rounded-xl bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">STATUS PEMBAYARAN</p>
-              <p className={`mt-1 font-extrabold ${
-                selectedOrder.payment_status === 'lunas' ? 'text-green-700' : 'text-amber-700'
-              }`}>
-                {selectedOrder.payment_status === 'lunas' ? 'SUDAH LUNAS' : 'BELUM LUNAS'}
-              </p>
-              {selectedOrder.payment_method && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Metode: {selectedOrder.payment_method === 'tunai' ? 'Tunai' : 'Non-Tunai'}
-                </p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-800">
-              Riwayat ini hanya untuk melihat data pesanan. Status dan pembayaran tidak dapat diubah dari halaman ini.
-            </div>
-
+    return (
+      <div className="space-y-4">
+        {groups.map(([dateKey, groupOrders]) => (
+          <section
+            key={dateKey}
+            className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm"
+          >
             <button
               type="button"
-              onClick={() => printReceipt(selectedOrder)}
-              className="mt-4 w-full rounded-xl bg-gray-800 p-3 text-sm font-bold text-white hover:bg-gray-900"
+              onClick={() => toggleGroup(dateKey)}
+              className="flex w-full items-center justify-between gap-3 bg-gray-50 px-4 py-3 text-left"
             >
-              CETAK STRUK
+              <div>
+                <p className="text-sm font-extrabold text-gray-800">
+                  {formatGroupDate(dateKey)}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  {groupOrders.length} pesanan
+                </p>
+              </div>
+              <span className="text-gray-500">
+                {collapsedGroups[dateKey] ? '＋' : '−'}
+              </span>
             </button>
-          </>
-        )}
+
+            {!collapsedGroups[dateKey] && (
+              <div className="divide-y divide-gray-100">
+                {groupOrders.map(order => {
+                  const selected = selectedOrderId === order.id;
+
+                  return (
+                    <button
+                      type="button"
+                      key={order.id}
+                      onClick={() => {
+                        setSelectedOrderId(order.id);
+                        setShowDetail(true);
+                      }}
+                      className={`w-full p-4 text-left transition ${
+                        selected ? 'bg-green-50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-extrabold text-gray-900">
+                            {order.order_code || 'Tanpa nomor pesanan'}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-700">
+                            {order.customer_name || 'Pelanggan'}
+                          </p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            Meja {String(order.table_number).padStart(2, '0')}
+                            {' · '}
+                            {formatDate(order.created_at)}
+                          </p>
+                        </div>
+
+                        <div className="text-right">
+                          <p className="text-sm font-extrabold text-gray-900">
+                            {rupiah(Number(order.total_amount || 0))}
+                          </p>
+                          <span className={`mt-2 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${statusColor(order.status)}`}>
+                            {statusLabels[order.status] || order.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${
+                          order.payment_status === 'lunas'
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+                        </span>
+                        {mode === 'history' && (
+                          <span className="text-[10px] font-semibold text-gray-400">
+                            Buka rincian riwayat
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        ))}
       </div>
-    </div>
-  );
+    );
+  };
+
+  const renderOrderDetail = () => {
+    if (!selectedOrder) {
+      return (
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center">
+          <p className="text-3xl">👈</p>
+          <p className="mt-3 font-bold text-gray-700">
+            Pilih pesanan untuk melihat rincian
+          </p>
+          <p className="mt-1 text-sm text-gray-500">
+            Rincian pesanan akan ditampilkan di panel ini.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div ref={detailRef} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-wide text-gray-400">
+              Rincian Pesanan
+            </p>
+            <h2 className="mt-1 break-words text-lg font-extrabold text-gray-900">
+              {selectedOrder.order_code}
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {selectedOrder.customer_name}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedOrderId('');
+              setShowDetail(true);
+            }}
+            className="rounded-lg bg-gray-100 px-3 py-2 text-sm font-bold text-gray-600"
+          >
+            Tutup
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 py-4">
+          <div className="rounded-xl bg-gray-50 p-3">
+            <p className="text-[10px] font-bold text-gray-400">NOMOR MEJA</p>
+            <p className="mt-1 text-lg font-extrabold text-gray-900">
+              {String(selectedOrder.table_number).padStart(2, '0')}
+            </p>
+          </div>
+          <div className="rounded-xl bg-gray-50 p-3">
+            <p className="text-[10px] font-bold text-gray-400">WAKTU PESAN</p>
+            <p className="mt-1 text-xs font-bold text-gray-800">
+              {formatDate(selectedOrder.created_at)}
+            </p>
+          </div>
+        </div>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusColor(selectedOrder.status)}`}>
+            {statusLabels[selectedOrder.status] || selectedOrder.status}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+            selectedOrder.payment_status === 'lunas'
+              ? 'bg-green-100 text-green-800'
+              : 'bg-amber-100 text-amber-800'
+          }`}>
+            {selectedOrder.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+          </span>
+        </div>
+
+        <h3 className="mb-3 text-sm font-extrabold text-gray-800">
+          Daftar Menu
+        </h3>
+
+        {detailLoading ? (
+          <p className="py-5 text-center text-sm text-gray-500">
+            Memuat rincian menu...
+          </p>
+        ) : detailItems.length === 0 ? (
+          <p className="py-5 text-center text-sm text-gray-500">
+            Rincian menu tidak tersedia.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {detailItems.map((item, index) => (
+              <div key={`${item.item_name}-${index}`} className="flex justify-between gap-3 border-b border-gray-100 pb-3">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-bold text-gray-800">
+                    {item.item_name}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {item.quantity} × {rupiah(item.item_price)}
+                  </p>
+                </div>
+                <p className="shrink-0 text-sm font-bold text-gray-800">
+                  {rupiah(item.subtotal)}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-4 flex items-center justify-between border-t border-dashed border-gray-300 pt-4">
+          <span className="font-bold text-gray-700">TOTAL</span>
+          <span className="text-xl font-extrabold text-green-800">
+            {rupiah(Number(selectedOrder.total_amount || 0))}
+          </span>
+        </div>
+
+        {activePage === 'pesanan' && ACTIVE_STATUSES.includes(selectedOrder.status) && (
+          <div className="mt-5 space-y-3">
+            {selectedOrder.payment_status !== 'lunas' ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs font-extrabold text-amber-900">
+                  PEMBAYARAN DI KASIR
+                </p>
+                <p className="mt-1 text-xs text-amber-800">
+                  Pilih metode pembayaran setelah pelanggan membayar.
+                </p>
+
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('tunai')}
+                    className={`rounded-lg border p-3 text-sm font-bold ${
+                      paymentMethod === 'tunai'
+                        ? 'border-green-600 bg-green-100 text-green-900'
+                        : 'border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    Tunai
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('non_tunai')}
+                    className={`rounded-lg border p-3 text-sm font-bold ${
+                      paymentMethod === 'non_tunai'
+                        ? 'border-green-600 bg-green-100 text-green-900'
+                        : 'border-gray-200 bg-white text-gray-600'
+                    }`}
+                  >
+                    Non-Tunai
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={processingPayment}
+                  onClick={() => markPaid(selectedOrder)}
+                  className="mt-3 w-full rounded-xl bg-green-700 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
+                >
+                  {processingPayment ? 'Memproses...' : 'KONFIRMASI PEMBAYARAN LUNAS'}
+                </button>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-3">
+                <p className="text-sm font-extrabold text-green-800">
+                  PEMBAYARAN SUDAH LUNAS
+                </p>
+                <p className="mt-1 text-xs text-green-700">
+                  Status pelayanan pesanan tetap harus diselesaikan sesuai urutan.
+                </p>
+              </div>
+            )}
+
+            {selectedOrder.status === 'menunggu' && (
+              <button
+                type="button"
+                disabled={processingStatus}
+                onClick={() => changeStatus(selectedOrder.id, 'diproses')}
+                className="w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
+              >
+                {processingStatus ? 'Memproses...' : 'MULAI PROSES PESANAN'}
+              </button>
+            )}
+
+            {selectedOrder.status === 'diproses' && (
+              <button
+                type="button"
+                disabled={processingStatus}
+                onClick={() => changeStatus(selectedOrder.id, 'siap')}
+                className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
+              >
+                {processingStatus ? 'Memproses...' : 'SIAP DISAJIKAN'}
+              </button>
+            )}
+
+            {selectedOrder.status === 'siap' && (
+              <button
+                type="button"
+                disabled={processingStatus}
+                onClick={() => changeStatus(selectedOrder.id, 'selesai')}
+                className="w-full rounded-xl bg-green-800 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
+              >
+                {processingStatus ? 'Memproses...' : 'SELESAIKAN PESANAN'}
+              </button>
+            )}
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => printReceipt(selectedOrder)}
+          className="mt-4 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-extrabold text-gray-700"
+        >
+          CETAK / LIHAT STRUK
+        </button>
+      </div>
+    );
+  };
+
+  const renderHistoryDetail = () => {
+    if (!selectedOrder) {
+      return (
+        <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center">
+          <p className="font-bold text-gray-700">Pilih riwayat pesanan</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Rincian pesanan yang dipilih akan muncul di sini.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3 border-b border-gray-100 pb-4">
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-gray-400">DETAIL RIWAYAT</p>
+            <h2 className="mt-1 break-words text-lg font-extrabold text-gray-900">
+              {selectedOrder.order_code}
+            </h2>
+            <p className="mt-1 text-sm text-gray-600">
+              {selectedOrder.customer_name}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedOrderId('')}
+            className="rounded-lg bg-gray-100 px-3 py-2 text-sm font-bold text-gray-600"
+          >
+            Tutup
+          </button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusColor(selectedOrder.status)}`}>
+            {statusLabels[selectedOrder.status] || selectedOrder.status}
+          </span>
+          <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+            selectedOrder.payment_status === 'lunas'
+              ? 'bg-green-100 text-green-800'
+              : 'bg-amber-100 text-amber-800'
+          }`}>
+            {selectedOrder.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+          </span>
+        </div>
+
+        <div className="mt-4 space-y-2 text-sm">
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">Meja</span>
+            <strong>{String(selectedOrder.table_number).padStart(2, '0')}</strong>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">Waktu Pesanan</span>
+            <strong className="text-right">{formatDate(selectedOrder.created_at)}</strong>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">Waktu Pembayaran</span>
+            <strong className="text-right">{formatDate(selectedOrder.paid_at)}</strong>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-gray-500">Metode Pembayaran</span>
+            <strong>
+              {selectedOrder.payment_method === 'tunai'
+                ? 'Tunai'
+                : selectedOrder.payment_method === 'non_tunai'
+                  ? 'Non-Tunai'
+                  : '-'}
+            </strong>
+          </div>
+        </div>
+
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <p className="mb-3 text-sm font-extrabold text-gray-800">Rincian Menu</p>
+          {detailLoading ? (
+            <p className="text-sm text-gray-500">Memuat rincian...</p>
+          ) : detailItems.length === 0 ? (
+            <p className="text-sm text-gray-500">Rincian menu tidak tersedia.</p>
+          ) : (
+            <div className="space-y-3">
+              {detailItems.map((item, index) => (
+                <div key={`${item.item_name}-${index}`} className="flex justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-gray-800">{item.item_name}</p>
+                    <p className="text-xs text-gray-500">
+                      {item.quantity} × {rupiah(item.item_price)}
+                    </p>
+                  </div>
+                  <p className="text-sm font-bold text-gray-800">{rupiah(item.subtotal)}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex justify-between border-t border-dashed border-gray-300 pt-4">
+          <span className="font-bold text-gray-700">TOTAL</span>
+          <span className="text-lg font-extrabold text-green-800">
+            {rupiah(Number(selectedOrder.total_amount || 0))}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => printReceipt(selectedOrder)}
+          className="mt-4 w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-extrabold text-gray-700"
+        >
+          LIHAT / CETAK STRUK
+        </button>
+      </div>
+    );
+  };
 
   const renderReport = () => (
     <>
-      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-extrabold text-green-950">Laporan Kas</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Rekap pemasukan berdasarkan waktu pembayaran
-          </p>
-        </div>
-        <span className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-bold text-green-900">
-          Zona waktu WIB
-        </span>
+      <div className="mb-5">
+        <h1 className="text-2xl font-extrabold text-green-950">Laporan Kas</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Ringkasan transaksi pembayaran berdasarkan waktu pembayaran.
+        </p>
       </div>
 
       <div className="mb-4 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-        <h2 className="mb-3 text-sm font-extrabold text-gray-800">Periode Laporan</h2>
-
+        <p className="mb-3 text-sm font-extrabold text-gray-800">Filter Periode</p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {([
             ['today', 'Hari Ini'],
@@ -1270,13 +1370,13 @@ export default function KasirView() {
             ['custom', 'Pilih Tanggal']
           ] as [ReportFilter, string][]).map(([value, label]) => (
             <button
-              key={value}
               type="button"
+              key={value}
               onClick={() => setReportFilter(value)}
-              className={`rounded-xl border p-3 text-xs font-bold sm:text-sm ${
+              className={`rounded-xl border px-3 py-2 text-xs font-bold ${
                 reportFilter === value
-                  ? 'border-green-700 bg-green-100 text-green-900'
-                  : 'border-gray-200 bg-white text-gray-600 hover:border-green-300'
+                  ? 'border-green-700 bg-green-700 text-white'
+                  : 'border-gray-200 bg-white text-gray-600'
               }`}
             >
               {label}
@@ -1287,130 +1387,126 @@ export default function KasirView() {
         {reportFilter === 'custom' && (
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="text-xs font-bold text-gray-600">
-              TANGGAL AWAL
+              Tanggal Mulai
               <input
                 type="date"
                 value={reportStartDate}
                 onChange={event => setReportStartDate(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-normal text-gray-800"
+                className="mt-1 w-full rounded-lg border border-gray-200 p-2 text-sm"
               />
             </label>
             <label className="text-xs font-bold text-gray-600">
-              TANGGAL AKHIR
+              Tanggal Akhir
               <input
                 type="date"
                 value={reportEndDate}
                 onChange={event => setReportEndDate(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm font-normal text-gray-800"
+                className="mt-1 w-full rounded-lg border border-gray-200 p-2 text-sm"
               />
             </label>
           </div>
         )}
 
         <p className="mt-3 text-xs text-gray-500">
-          {reportData.invalidRange
-            ? 'Tanggal awal tidak boleh melewati tanggal akhir.'
-            : reportData.startKey === reportData.endKey
-              ? `Tanggal: ${reportData.startKey}`
-              : `Periode: ${reportData.startKey} sampai ${reportData.endKey}`}
+          Periode: {reportData.startKey} sampai {reportData.endKey}
         </p>
       </div>
 
       {reportData.invalidRange && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Periksa kembali rentang tanggal yang dipilih.
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-800">
+          Rentang tanggal tidak valid. Pastikan tanggal mulai tidak melewati tanggal akhir.
         </div>
       )}
 
-      <div className="mb-4 rounded-2xl bg-green-900 p-4 text-white shadow-md sm:p-5">
-        <p className="text-xs font-semibold text-green-200">TOTAL PEMASUKAN PERIODE INI</p>
-        <p className="mt-2 text-3xl font-extrabold">
-          {rupiah(reportData.totalIncome)}
-        </p>
-        <p className="mt-2 text-xs text-green-200">
-          {reportData.transactionCount} transaksi lunas
-        </p>
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-green-800 p-5 text-white shadow-sm">
+          <p className="text-xs font-bold text-green-100">TOTAL PEMASUKAN</p>
+          <p className="mt-2 text-2xl font-extrabold">
+            {rupiah(reportData.totalIncome)}
+          </p>
+          <p className="mt-2 text-xs text-green-100">
+            {reportData.transactionCount} transaksi lunas
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+          <p className="text-xs font-bold text-gray-500">RATA-RATA TRANSAKSI</p>
+          <p className="mt-2 text-2xl font-extrabold text-gray-900">
+            {rupiah(
+              reportData.transactionCount
+                ? reportData.totalIncome / reportData.transactionCount
+                : 0
+            )}
+          </p>
+          <p className="mt-2 text-xs text-gray-400">Per transaksi</p>
+        </div>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-3">
-        <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-gray-500">PEMASUKAN TUNAI</p>
-          <p className="mt-2 text-lg font-extrabold text-green-800">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-gray-100 bg-white p-4">
+          <p className="text-xs font-bold text-gray-500">PEMBAYARAN TUNAI</p>
+          <p className="mt-2 text-xl font-extrabold text-gray-900">
             {rupiah(reportData.cashIncome)}
           </p>
-          <p className="mt-1 text-xs text-gray-400">{reportData.cashCount} transaksi</p>
+          <p className="mt-1 text-xs text-gray-500">
+            {reportData.cashCount} transaksi
+          </p>
         </div>
-        <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold text-gray-500">PEMASUKAN NON-TUNAI</p>
-          <p className="mt-2 text-lg font-extrabold text-blue-800">
+        <div className="rounded-2xl border border-gray-100 bg-white p-4">
+          <p className="text-xs font-bold text-gray-500">PEMBAYARAN NON-TUNAI</p>
+          <p className="mt-2 text-xl font-extrabold text-gray-900">
             {rupiah(reportData.nonCashIncome)}
           </p>
-          <p className="mt-1 text-xs text-gray-400">{reportData.nonCashCount} transaksi</p>
+          <p className="mt-1 text-xs text-gray-500">
+            {reportData.nonCashCount} transaksi
+          </p>
         </div>
       </div>
 
       {reportData.unknownMethodCount > 0 && (
-        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="font-extrabold">Metode pembayaran belum tercatat</p>
-          <p className="mt-1">
-            {reportData.unknownMethodCount} transaksi sebesar{' '}
-            {rupiah(reportData.unknownMethodIncome)} sudah masuk total pemasukan,
-            tetapi belum dapat dikelompokkan sebagai tunai atau non-tunai.
-          </p>
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          Ada {reportData.unknownMethodCount} transaksi dengan metode pembayaran
+          yang tidak dikenali, senilai {rupiah(reportData.unknownMethodIncome)}.
         </div>
       )}
 
-      <div className="mb-5 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-extrabold text-gray-900">Rincian Transaksi</h2>
-            <p className="text-xs text-gray-500">Urut berdasarkan waktu pembayaran terbaru</p>
-          </div>
-          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
-            {reportData.transactionCount} Transaksi
-          </span>
+      <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 p-4">
+          <h2 className="font-extrabold text-gray-900">Daftar Transaksi</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Urut berdasarkan waktu pembayaran terbaru.
+          </p>
         </div>
 
-        {loading ? (
-          <p className="py-8 text-center text-sm text-gray-500">Memuat laporan...</p>
-        ) : reportData.transactions.length === 0 ? (
-          <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
-            Belum ada pembayaran lunas pada periode ini.
-          </div>
+        {reportData.transactions.length === 0 ? (
+          <p className="p-6 text-center text-sm text-gray-500">
+            Tidak ada transaksi lunas pada periode ini.
+          </p>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-gray-100">
             {reportData.transactions.map(order => (
-              <div key={order.id} className="rounded-xl border border-gray-100 p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-extrabold text-gray-900">{order.order_code}</p>
-                    <p className="mt-1 text-sm text-gray-700">{order.customer_name}</p>
-                    <p className="mt-1 text-xs text-gray-500">
-                      Meja {String(order.table_number).padStart(2, '0')}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-extrabold text-green-800">
-                      {rupiah(Number(order.total_amount || 0))}
-                    </p>
-                    <span className={`mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${
-                      order.payment_method === 'tunai'
-                        ? 'bg-green-100 text-green-800'
-                        : order.payment_method === 'non_tunai'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {order.payment_method === 'tunai'
-                        ? 'TUNAI'
-                        : order.payment_method === 'non_tunai'
-                          ? 'NON-TUNAI'
-                          : 'METODE TIDAK DIKETAHUI'}
-                    </span>
-                  </div>
+              <div key={order.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div className="min-w-0">
+                  <p className="break-words text-sm font-extrabold text-gray-800">
+                    {order.order_code}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {order.customer_name} · Meja {String(order.table_number).padStart(2, '0')}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">
+                    Dibayar: {formatDate(order.paid_at)}
+                  </p>
+                  <p className="mt-1 text-[10px] font-semibold text-gray-500">
+                    {order.payment_method === 'tunai'
+                      ? 'Tunai'
+                      : order.payment_method === 'non_tunai'
+                        ? 'Non-Tunai'
+                        : 'Metode tidak diketahui'}
+                  </p>
                 </div>
-                <div className="mt-3 border-t border-gray-100 pt-2 text-xs text-gray-500">
-                  Waktu pembayaran: {formatDate(order.paid_at)}
-                </div>
+                <p className="text-sm font-extrabold text-green-800">
+                  {rupiah(Number(order.total_amount || 0))}
+                </p>
               </div>
             ))}
           </div>
@@ -1418,394 +1514,631 @@ export default function KasirView() {
       </div>
 
       {reportData.paidWithoutDate.length > 0 && (
-        <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm">
-          <h2 className="text-sm font-extrabold text-amber-900">
-            Pembayaran Lunas Tanpa Waktu Tercatat
-          </h2>
-          <p className="mt-2 text-xs leading-relaxed text-gray-600">
-            Ada pembayaran lama yang belum memiliki data paid_at. Transaksi ini
-            sengaja tidak dimasukkan ke tanggal laporan agar tanggal pemasukan
-            tidak keliru.
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-extrabold text-amber-900">
+            Pembayaran Tanpa Waktu Tercatat
           </p>
-          <div className="mt-3 rounded-xl bg-amber-50 p-3">
-            <p className="text-xs text-amber-800">JUMLAH TRANSAKSI</p>
-            <p className="text-lg font-extrabold text-amber-900">
-              {reportData.paidWithoutDate.length}
-            </p>
-            <p className="mt-2 text-xs text-amber-800">TOTAL NILAI</p>
-            <p className="text-lg font-extrabold text-amber-900">
-              {rupiah(reportData.paidWithoutDateIncome)}
+          <p className="mt-1 text-xs leading-relaxed text-amber-800">
+            {reportData.paidWithoutDate.length} pesanan lama berstatus lunas
+            tidak memiliki data waktu pembayaran. Nilai {rupiah(reportData.paidWithoutDateIncome)}
+            {' '}tidak dimasukkan ke total periode karena tanggal transaksinya
+            tidak dapat dipastikan.
+          </p>
+        </div>
+      )}
+    </>
+  );
+
+  const renderCashierAccount = () => (
+    <>
+      <div className="mb-5">
+        <h1 className="text-2xl font-extrabold text-green-950">Akun Kasir</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          Informasi akun yang sedang digunakan pada perangkat ini.
+        </p>
+      </div>
+
+      <section className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="bg-gradient-to-r from-green-800 to-green-700 p-5 text-white">
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white/15 text-2xl font-extrabold">
+              {(cashierProfile?.full_name || 'K').charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-green-100">AKUN KASIR</p>
+              <h2 className="break-words text-lg font-extrabold">
+                {cashierProfile?.full_name || 'Kasir'}
+              </h2>
+              <span className="mt-1 inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-bold">
+                {(cashierProfile?.role || 'kasir').toUpperCase()}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4 p-5">
+          {profileLoading ? (
+            <p className="text-sm text-gray-500">Memuat informasi akun...</p>
+          ) : profileError ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              {profileError}
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-xs font-bold text-gray-400">NAMA LENGKAP</p>
+                <p className="mt-1 break-words font-bold text-gray-800">
+                  {cashierProfile?.full_name || '-'}
+                </p>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-bold text-gray-400">EMAIL LOGIN</p>
+                <p className="mt-1 break-all font-semibold text-gray-800">
+                  {cashierEmail || '-'}
+                </p>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-bold text-gray-400">ROLE AKUN</p>
+                <p className="mt-1 font-semibold text-gray-800">
+                  {cashierProfile?.role || 'kasir'}
+                </p>
+              </div>
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-xs font-bold text-gray-400">UID AKUN</p>
+                <p className="mt-1 break-all font-mono text-xs text-gray-700">
+                  {cashierUid || '-'}
+                </p>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+        <h2 className="font-extrabold text-gray-900">Sesi Perangkat Ini</h2>
+        <div className="mt-3 flex items-center gap-2">
+          <span className={`h-3 w-3 rounded-full ${currentUser ? 'bg-green-500' : 'bg-red-500'}`} />
+          <p className={`text-sm font-bold ${currentUser ? 'text-green-800' : 'text-red-700'}`}>
+            {currentUser ? 'Sedang login' : 'Tidak ada sesi login'}
+          </p>
+        </div>
+        <p className="mt-2 text-xs leading-relaxed text-gray-500">
+          Status ini menunjukkan sesi akun pada perangkat yang sedang digunakan.
+          Tombol Keluar berada di bagian header aplikasi. Keluar dari perangkat
+          ini tidak dimaksudkan untuk mengeluarkan akun dari perangkat kasir lain.
+        </p>
+      </section>
+
+      <section className="mt-4 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <div className="border-b border-gray-100 p-5">
+          <h2 className="font-extrabold text-gray-900">Riwayat Pembayaran Saya</h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Pembayaran lunas yang tercatat menggunakan UID akun ini.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 p-4">
+          <div className="rounded-xl bg-green-50 p-3">
+            <p className="text-[10px] font-bold text-green-700">JUMLAH TRANSAKSI</p>
+            <p className="mt-1 text-2xl font-extrabold text-green-900">
+              {cashierPaymentHistory.length}
             </p>
           </div>
-          <div className="mt-3 space-y-2">
-            {reportData.paidWithoutDate.map(order => (
-              <div key={order.id} className="flex flex-wrap justify-between gap-2 border-b border-gray-100 py-2 text-sm">
-                <div>
-                  <p className="font-bold text-gray-800">{order.order_code}</p>
-                  <p className="text-xs text-gray-500">{order.customer_name}</p>
+          <div className="rounded-xl bg-green-50 p-3">
+            <p className="text-[10px] font-bold text-green-700">TOTAL PEMBAYARAN</p>
+            <p className="mt-1 break-words text-lg font-extrabold text-green-900">
+              {rupiah(
+                cashierPaymentHistory.reduce(
+                  (sum, order) => sum + Number(order.total_amount || 0),
+                  0
+                )
+              )}
+            </p>
+          </div>
+        </div>
+
+        {cashierPaymentHistory.length === 0 ? (
+          <p className="px-5 pb-5 text-center text-sm text-gray-500">
+            Belum ada pembayaran yang tercatat atas akun ini.
+          </p>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {cashierPaymentHistory.map(order => (
+              <div key={order.id} className="p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-extrabold text-gray-800">
+                      {order.order_code}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-600">
+                      {order.customer_name} · Meja {String(order.table_number).padStart(2, '0')}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {formatDate(order.paid_at)}
+                    </p>
+                    <p className="mt-1 text-[10px] font-semibold text-gray-500">
+                      Metode: {order.payment_method === 'tunai'
+                        ? 'Tunai'
+                        : order.payment_method === 'non_tunai'
+                          ? 'Non-Tunai'
+                          : '-'}
+                    </p>
+                  </div>
+                  <p className="text-sm font-extrabold text-green-800">
+                    {rupiah(Number(order.total_amount || 0))}
+                  </p>
                 </div>
-                <p className="font-bold text-gray-800">
-                  {rupiah(Number(order.total_amount || 0))}
-                </p>
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+      </section>
+
+      <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
+        <p className="text-xs font-extrabold text-blue-900">INFORMASI AKUN</p>
+        <p className="mt-1 text-xs leading-relaxed text-blue-800">
+          Halaman ini hanya menampilkan informasi akun dan pembayaran yang
+          tercatat atas UID kasir yang sedang login. Pengelolaan akun, role,
+          dan hak akses tetap menjadi kewenangan Admin.
+        </p>
+      </div>
     </>
   );
 
+  const handlePrintReceipt = () => {
+    if (!receipt) return;
+
+    const printWindow = window.open('', '_blank', 'width=420,height=700');
+
+    if (!printWindow) {
+      setError('Jendela cetak diblokir browser. Izinkan pop-up untuk mencetak struk.');
+      return;
+    }
+
+    const order = receipt.order;
+    const itemsHtml = receipt.items.map(item => `
+      <div class="item">
+        <div>${item.item_name}</div>
+        <div class="sub">${item.quantity} x ${rupiah(item.item_price)}</div>
+        <div class="price">${rupiah(item.subtotal)}</div>
+      </div>
+    `).join('');
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>Struk ${order.order_code}</title>
+        <style>
+          * { box-sizing: border-box; }
+          body {
+            width: 75mm;
+            margin: 0 auto;
+            padding: 5mm;
+            color: #111;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+          }
+          .center { text-align: center; }
+          .brand { font-size: 18px; font-weight: 800; }
+          .small { font-size: 10px; line-height: 1.5; }
+          .line { border-top: 1px dashed #333; margin: 10px 0; }
+          .row { display: flex; justify-content: space-between; gap: 8px; margin: 5px 0; }
+          .item { margin: 8px 0; }
+          .sub { color: #555; font-size: 10px; margin-top: 2px; }
+          .price { text-align: right; font-weight: 700; margin-top: 2px; }
+          .total { font-size: 15px; font-weight: 800; }
+          .footer { margin-top: 15px; text-align: center; font-size: 10px; }
+          @media print {
+            body { width: 75mm; margin: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="center">
+          <div class="brand">WAROENG BPJS</div>
+          <div class="small">
+            Jl. Kandangsapi 001/002 No. 01<br />
+            Desa Tanjungsari, Kecamatan Sukaluyu<br />
+            Kabupaten Cianjur
+          </div>
+        </div>
+        <div class="line"></div>
+        <div class="row"><span>No. Pesanan</span><strong>${order.order_code}</strong></div>
+        <div class="row"><span>Pelanggan</span><strong>${order.customer_name}</strong></div>
+        <div class="row"><span>Meja</span><strong>${String(order.table_number).padStart(2, '0')}</strong></div>
+        <div class="row"><span>Waktu</span><strong>${formatDate(order.created_at)}</strong></div>
+        <div class="line"></div>
+        ${itemsHtml}
+        <div class="line"></div>
+        <div class="row total"><span>TOTAL</span><span>${rupiah(Number(order.total_amount || 0))}</span></div>
+        <div class="row"><span>Pembayaran</span><strong>${order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}</strong></div>
+        <div class="row"><span>Metode</span><strong>${order.payment_method === 'tunai' ? 'Tunai' : order.payment_method === 'non_tunai' ? 'Non-Tunai' : '-'}</strong></div>
+        <div class="line"></div>
+        <div class="footer">
+          Terima kasih telah berkunjung.<br />
+          Selamat menikmati pesanan Anda.
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+          };
+        </script>
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+  };
+
   return (
-    <>
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden !important;
-          }
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-3 sm:p-5 lg:flex-row">
+        <aside className="w-full shrink-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:h-fit lg:w-64">
+          <div className="mb-5 border-b border-gray-100 pb-4">
+            <p className="text-xs font-bold tracking-widest text-green-700">
+              WAROENG BPJS
+            </p>
+            <h2 className="mt-1 text-xl font-extrabold text-gray-900">
+              Panel Kasir
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              Sistem pengelolaan pesanan
+            </p>
+          </div>
 
-          #receipt-print-area,
-          #receipt-print-area * {
-            visibility: visible !important;
-          }
-
-          #receipt-print-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 75mm !important;
-            max-width: 75mm !important;
-            margin: 0 !important;
-            padding: 5mm !important;
-            box-shadow: none !important;
-            background: white !important;
-          }
-
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
-
-      <main className="min-h-screen bg-slate-50 text-gray-800">
-        <div className="mx-auto flex max-w-7xl flex-col gap-5 p-3 sm:p-5 lg:flex-row">
-          <aside className="w-full shrink-0 rounded-2xl bg-green-900 p-4 text-white shadow-lg lg:w-60">
-            <div className="mb-5 border-b border-green-700 pb-4">
-              <p className="text-xs font-semibold tracking-widest text-green-200">WAROENG BPJS</p>
-              <h2 className="mt-1 text-xl font-extrabold">KASIR</h2>
-              <p className="mt-1 text-xs text-green-200">Dashboard Pengelolaan Pesanan</p>
-            </div>
-
-            <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
-              {cashierNavigation.map(item => {
-                const isActive = activePage === item.id;
-
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setActivePage(item.id);
-                      setSearch('');
-                      setSelectedOrderId('');
-                      setShowDetail(true);
-                      setError('');
-                    }}
-                    aria-current={isActive ? 'page' : undefined}
-                    className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${
-                      isActive
-                        ? 'bg-white text-green-900 shadow-sm'
-                        : 'text-green-100 hover:bg-green-800'
-                    }`}
-                  >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-
-            <div className="mt-6 hidden rounded-xl bg-green-800 p-3 text-xs leading-relaxed text-green-100 lg:block">
-              Sistem kasir WAROENG BPJS
-              <br />
-              Data pesanan tersinkron dengan database.
-            </div>
-          </aside>
-
-          <section className="min-w-0 flex-1">
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-                {error}
-                <button
-                  onClick={() => setError('')}
-                  className="ml-3 font-bold underline"
-                >
-                  Tutup
-                </button>
-              </div>
-            )}
-
-            {activePage === 'dashboard' ? (
-              <>
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h1 className="text-2xl font-extrabold text-green-950">Dashboard Kasir</h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Ringkasan dan pengelolaan pesanan pelanggan
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-semibold text-green-900">
-                    <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
-                    Sistem Terhubung
-                  </div>
-                </div>
-
-                <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-                  <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-semibold text-gray-500">TOTAL PESANAN</p>
-                    <p className="mt-2 text-2xl font-extrabold text-green-950">{summary.totalOrders}</p>
-                    <p className="mt-1 text-xs text-gray-400">Semua pesanan</p>
-                  </div>
-                  <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-semibold text-gray-500">BELUM LUNAS</p>
-                    <p className="mt-2 text-2xl font-extrabold text-amber-700">{summary.unpaidCount}</p>
-                    <p className="mt-1 text-xs text-gray-400">{rupiah(summary.unpaidAmount)}</p>
-                  </div>
-                  <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-semibold text-gray-500">PESANAN LUNAS</p>
-                    <p className="mt-2 text-2xl font-extrabold text-blue-800">{summary.paidCount}</p>
-                    <p className="mt-1 text-xs text-gray-400">Pembayaran berhasil</p>
-                  </div>
-                  <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-                    <p className="text-xs font-semibold text-gray-500">SEDANG DIPROSES</p>
-                    <p className="mt-2 text-2xl font-extrabold text-emerald-800">{summary.processingCount}</p>
-                    <p className="mt-1 text-xs text-gray-400">Pesanan aktif</p>
-                  </div>
-                </div>
-
-                <div className="mb-5 rounded-2xl bg-green-900 p-4 text-white shadow-md sm:p-5">
-                  <div className="mb-4">
-                    <h2 className="text-lg font-extrabold">Ringkasan Kas</h2>
-                    <p className="text-xs text-green-200">Dihitung dari pesanan yang sudah LUNAS</p>
-                  </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    <div>
-                      <p className="text-xs text-green-200">TOTAL PEMASUKAN</p>
-                      <p className="mt-1 text-xl font-extrabold">{rupiah(summary.totalIncome)}</p>
-                    </div>
-                    <div className="border-t border-green-700 pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-                      <p className="text-xs text-green-200">TUNAI</p>
-                      <p className="mt-1 text-xl font-extrabold">{rupiah(summary.cashIncome)}</p>
-                    </div>
-                    <div className="border-t border-green-700 pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-                      <p className="text-xs text-green-200">NON-TUNAI</p>
-                      <p className="mt-1 text-xl font-extrabold">{rupiah(summary.nonCashIncome)}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
-                  {showDetail && (
-                    <div className="order-1 xl:order-2">{renderOrderDetail()}</div>
-                  )}
-                  <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
-                    {renderOrderList(groupedOrders, filteredOrders.length, 'Pesanan Masuk', 'Belum ada pesanan masuk.')}
-                  </div>
-                </div>
-
-                <p className="mt-5 text-center text-xs text-gray-400">
-                  WAROENG BPJS · Dashboard Kasir
-                </p>
-              </>
-            ) : activePage === 'pesanan' ? (
-              <>
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h1 className="text-2xl font-extrabold text-green-950">Pesanan Aktif</h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Pesanan yang masih dalam proses pelayanan
-                    </p>
-                  </div>
-                  <span className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-bold text-green-900">
-                    {activeOrders.length} Pesanan Aktif
+          <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
+            {cashierNavigation.map(item => (
+              <button
+                type="button"
+                key={item.id}
+                onClick={() => {
+                  setActivePage(item.id);
+                  setSelectedOrderId('');
+                  setSearch('');
+                  setError('');
+                }}
+                className={`flex min-w-0 items-center gap-3 rounded-xl p-3 text-left transition ${
+                  activePage === item.id
+                    ? 'bg-green-800 text-white shadow-sm'
+                    : 'bg-gray-50 text-gray-700 hover:bg-green-50'
+                }`}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/5 text-lg font-extrabold">
+                  {item.icon}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-extrabold sm:text-sm">
+                    {item.label}
                   </span>
-                </div>
-
-                <div className="mb-4 grid grid-cols-3 gap-2">
-                  <div className="rounded-xl border border-amber-100 bg-white p-3">
-                    <p className="text-xs text-gray-500">BARU</p>
-                    <p className="mt-1 text-xl font-extrabold text-amber-700">
-                      {activeOrders.filter(order => order.status === 'menunggu').length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-blue-100 bg-white p-3">
-                    <p className="text-xs text-gray-500">DIPROSES</p>
-                    <p className="mt-1 text-xl font-extrabold text-blue-700">
-                      {activeOrders.filter(order => order.status === 'diproses').length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-emerald-100 bg-white p-3">
-                    <p className="text-xs text-gray-500">SIAP</p>
-                    <p className="mt-1 text-xl font-extrabold text-emerald-700">
-                      {activeOrders.filter(order => order.status === 'siap').length}
-                    </p>
-                  </div>
-                </div>
-
-                <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
-                  {showDetail && (
-                    <div className="order-1 xl:order-2">{renderOrderDetail()}</div>
-                  )}
-                  <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
-                    {renderOrderList(groupedActiveOrders, filteredActiveOrders.length, 'Daftar Pesanan Aktif', 'Tidak ada pesanan aktif saat ini.')}
-                  </div>
-                </div>
-              </>
-            ) : activePage === 'riwayat' ? (
-              <>
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <h1 className="text-2xl font-extrabold text-green-950">Riwayat Pesanan</h1>
-                    <p className="mt-1 text-sm text-gray-500">
-                      Arsip pesanan yang sudah selesai dan dibatalkan
-                    </p>
-                  </div>
-                  <span className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-bold text-green-900">
-                    {historyOrders.length} Pesanan
+                  <span className={`hidden text-[10px] sm:block ${
+                    activePage === item.id ? 'text-green-100' : 'text-gray-400'
+                  }`}>
+                    {item.description}
                   </span>
-                </div>
+                </span>
+              </button>
+            ))}
+          </nav>
+        </aside>
 
-                <div className="mb-4 grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-gray-200 bg-white p-3">
-                    <p className="text-xs font-semibold text-gray-500">SELESAI</p>
-                    <p className="mt-1 text-xl font-extrabold text-gray-800">
-                      {historyOrders.filter(order => order.status === 'selesai').length}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-red-100 bg-white p-3">
-                    <p className="text-xs font-semibold text-gray-500">DIBATALKAN</p>
-                    <p className="mt-1 text-xl font-extrabold text-red-700">
-                      {historyOrders.filter(order => order.status === 'dibatalkan').length}
-                    </p>
-                  </div>
-                </div>
+        <main className="min-w-0 flex-1">
+          <header className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div>
+              <p className="text-xs font-bold text-green-700">
+                WAROENG BPJS · AREA KASIR
+              </p>
+              <h1 className="mt-1 text-lg font-extrabold text-gray-900">
+                {activePageInfo?.label || 'Dashboard'}
+              </h1>
+              <p className="mt-1 text-xs text-gray-500">
+                {activePageInfo?.description}
+              </p>
+            </div>
+            <div className="rounded-xl bg-green-50 px-3 py-2 text-right">
+              <p className="text-[10px] font-bold text-green-700">AKUN AKTIF</p>
+              <p className="max-w-[180px] truncate text-sm font-extrabold text-green-950">
+                {cashierProfile?.full_name || cashierEmail || 'Kasir'}
+              </p>
+            </div>
+          </header>
 
-                <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
-                  {showDetail && (
-                    <div className="order-1 xl:order-2">{renderHistoryDetail()}</div>
-                  )}
-                  <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
-                    {renderOrderList(groupedHistoryOrders, filteredHistoryOrders.length, 'Daftar Riwayat Pesanan', 'Belum ada pesanan selesai atau dibatalkan.')}
-                  </div>
-                </div>
-              </>
-            ) : activePage === 'laporan' ? (
-              renderReport()
-            ) : activePage === 'meja' ? (
-              renderTableStatus()
-            ) : (
-              <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-100 text-xl font-extrabold text-green-900">
-                    {activePageInfo?.icon}
-                  </div>
-                  <div>
-                    <h1 className="text-xl font-extrabold text-green-950">{activePageInfo?.label}</h1>
-                    <p className="mt-1 text-sm text-gray-500">{activePageInfo?.description}</p>
-                  </div>
-                </div>
-                <div className="rounded-xl border border-green-100 bg-green-50 p-4">
-                  <p className="font-bold text-green-900">Halaman sedang disiapkan</p>
-                  <p className="mt-2 text-sm leading-relaxed text-green-800">
-                    Navigasi ini sudah aktif. Fitur dan tampilan halaman akan dibuat pada tahap berikutnya agar tidak mengganggu Dashboard dan fungsi kasir yang sudah berjalan.
+          {error && (
+            <div className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <p>{error}</p>
+              <button
+                type="button"
+                onClick={() => setError('')}
+                className="font-extrabold"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {activePage === 'dashboard' && (
+            <>
+              <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-bold text-gray-500">TOTAL PESANAN</p>
+                  <p className="mt-2 text-2xl font-extrabold text-gray-900">
+                    {loading ? '—' : summary.totalOrders}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setActivePage('dashboard')}
-                  className="mt-5 rounded-xl bg-green-800 px-5 py-3 text-sm font-bold text-white hover:bg-green-900"
-                >
-                  Kembali ke Dashboard
-                </button>
+                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-bold text-gray-500">PESANAN DIPROSES</p>
+                  <p className="mt-2 text-2xl font-extrabold text-blue-700">
+                    {loading ? '—' : summary.processingCount}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-bold text-gray-500">SUDAH LUNAS</p>
+                  <p className="mt-2 text-2xl font-extrabold text-green-700">
+                    {loading ? '—' : summary.paidCount}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <p className="text-xs font-bold text-gray-500">BELUM LUNAS</p>
+                  <p className="mt-2 text-2xl font-extrabold text-amber-700">
+                    {loading ? '—' : summary.unpaidCount}
+                  </p>
+                </div>
               </div>
-            )}
-          </section>
-        </div>
-      </main>
+
+              <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-green-800 p-5 text-white shadow-sm">
+                  <p className="text-xs font-bold text-green-100">TOTAL PEMASUKAN TERCATAT</p>
+                  <p className="mt-2 text-2xl font-extrabold">{rupiah(summary.totalIncome)}</p>
+                  <p className="mt-1 text-xs text-green-100">Pembayaran berstatus lunas</p>
+                </div>
+                <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                  <p className="text-xs font-bold text-gray-500">TOTAL TAGIHAN BELUM LUNAS</p>
+                  <p className="mt-2 text-2xl font-extrabold text-amber-700">
+                    {rupiah(summary.unpaidAmount)}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-400">Menunggu pembayaran di kasir</p>
+                </div>
+              </div>
+
+              <div className="mb-5 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="font-extrabold text-gray-900">Pesanan Terbaru</h2>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Cari berdasarkan nomor pesanan atau nama pelanggan.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActivePage('pesanan')}
+                    className="rounded-lg bg-green-700 px-3 py-2 text-xs font-bold text-white"
+                  >
+                    Lihat Pesanan Aktif
+                  </button>
+                </div>
+
+                <input
+                  type="search"
+                  value={search}
+                  onChange={event => setSearch(event.target.value)}
+                  placeholder="Cari nomor pesanan / nama pelanggan..."
+                  className="mb-4 w-full rounded-xl border border-gray-200 px-4 py-3 text-sm outline-none focus:border-green-600"
+                />
+
+                {loading ? (
+                  <p className="py-8 text-center text-sm text-gray-500">
+                    Memuat pesanan...
+                  </p>
+                ) : (
+                  renderOrderList(groupedOrders, 'dashboard')
+                )}
+              </div>
+
+              {selectedOrder && (
+                <div className="mb-5">
+                  {renderOrderDetail()}
+                </div>
+              )}
+            </>
+          )}
+
+          {activePage === 'pesanan' && (
+            <>
+              <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {[
+                  { label: 'PESANAN BARU', value: activeOrders.filter(order => order.status === 'menunggu').length, color: 'text-amber-700' },
+                  { label: 'DIPROSES', value: activeOrders.filter(order => order.status === 'diproses').length, color: 'text-blue-700' },
+                  { label: 'SIAP DISAJIKAN', value: activeOrders.filter(order => order.status === 'siap').length, color: 'text-green-700' }
+                ].map(item => (
+                  <div key={item.label} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                    <p className="text-[10px] font-bold text-gray-500">{item.label}</p>
+                    <p className={`mt-2 text-2xl font-extrabold ${item.color}`}>
+                      {loading ? '—' : item.value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
+                <section className="min-w-0">
+                  <div className="mb-3">
+                    <h2 className="font-extrabold text-gray-900">Daftar Pesanan Aktif</h2>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Pesanan baru, sedang diproses, dan siap disajikan.
+                    </p>
+                  </div>
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={event => setSearch(event.target.value)}
+                    placeholder="Cari nomor / nama pelanggan..."
+                    className="mb-4 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm"
+                  />
+                  {loading ? (
+                    <div className="rounded-xl bg-white p-6 text-center text-sm text-gray-500">
+                      Memuat pesanan...
+                    </div>
+                  ) : (
+                    renderOrderList(groupedActiveOrders, 'active')
+                  )}
+                </section>
+
+                <section className="min-w-0">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="font-extrabold text-gray-900">Panel Detail</h2>
+                    {selectedOrder && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDetail(value => !value)}
+                        className="text-xs font-bold text-green-700"
+                      >
+                        {showDetail ? 'Sembunyikan' : 'Tampilkan'}
+                      </button>
+                    )}
+                  </div>
+                  {showDetail && renderOrderDetail()}
+                </section>
+              </div>
+            </>
+          )}
+
+          {activePage === 'riwayat' && (
+            <>
+              <div className="mb-5">
+                <h2 className="text-xl font-extrabold text-gray-900">Riwayat Pesanan</h2>
+                <p className="mt-1 text-sm text-gray-500">
+                  Pesanan yang telah selesai atau dibatalkan. Riwayat hanya untuk dilihat.
+                </p>
+              </div>
+
+              <input
+                type="search"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Cari nomor pesanan / nama pelanggan..."
+                className="mb-4 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm"
+              />
+
+              <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
+                <section className="min-w-0">
+                  {loading ? (
+                    <div className="rounded-xl bg-white p-6 text-center text-sm text-gray-500">
+                      Memuat riwayat...
+                    </div>
+                  ) : (
+                    renderOrderList(groupedHistoryOrders, 'history')
+                  )}
+                </section>
+                <section className="min-w-0">
+                  <h2 className="mb-3 font-extrabold text-gray-900">Detail Riwayat</h2>
+                  {renderHistoryDetail()}
+                </section>
+              </div>
+            </>
+          )}
+
+          {activePage === 'laporan' && renderReport()}
+
+          {activePage === 'meja' && renderTableStatus()}
+
+          {activePage === 'akun' && renderCashierAccount()}
+        </main>
+      </div>
 
       {receipt && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-4">
-          <div
-            id="receipt-print-area"
-            className="mx-auto max-w-sm rounded-xl bg-white p-5 text-gray-900"
-          >
-            <div className="text-center">
-              <h2 className="text-xl font-extrabold">WAROENG BPJS</h2>
-              <p className="text-xs">Jl. Kandangsapi 001/002 No. 01</p>
-              <p className="text-xs">Desa Tanjungsari, Kecamatan Sukaluyu</p>
-              <p className="text-xs">Kabupaten Cianjur</p>
-              <hr className="my-3" />
-              <h3 className="font-bold">STRUK PESANAN</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-3">
+          <div className="my-auto w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-extrabold text-gray-900">Pratinjau Struk</h2>
+                <p className="text-xs text-gray-500">{receipt.order.order_code}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setReceipt(null)}
+                className="rounded-lg bg-gray-100 px-3 py-2 font-bold text-gray-600"
+              >
+                ×
+              </button>
             </div>
 
-            <div className="my-3 space-y-1 text-sm">
-              <p>No: {receipt.order.order_code}</p>
-              <p>Nama: {receipt.order.customer_name}</p>
-              <p>Meja: {String(receipt.order.table_number).padStart(2, '0')}</p>
-              <p>Waktu: {formatDate(receipt.order.created_at)}</p>
-            </div>
+            <div className="mx-auto max-h-[60vh] max-w-[280px] overflow-y-auto border border-dashed border-gray-300 bg-white p-4 text-xs text-gray-800">
+              <div className="text-center">
+                <p className="text-base font-extrabold">WAROENG BPJS</p>
+                <p className="mt-1 leading-relaxed">
+                  Jl. Kandangsapi 001/002 No. 01<br />
+                  Desa Tanjungsari, Kecamatan Sukaluyu<br />
+                  Kabupaten Cianjur
+                </p>
+              </div>
 
-            <hr />
+              <div className="my-3 border-t border-dashed border-gray-400" />
 
-            <div className="my-3 space-y-2 text-sm">
+              <div className="space-y-1">
+                <p>No: {receipt.order.order_code}</p>
+                <p>Pelanggan: {receipt.order.customer_name}</p>
+                <p>Meja: {String(receipt.order.table_number).padStart(2, '0')}</p>
+                <p>Waktu: {formatDate(receipt.order.created_at)}</p>
+              </div>
+
+              <div className="my-3 border-t border-dashed border-gray-400" />
+
               {receipt.items.map((item, index) => (
-                <div key={index} className="flex justify-between gap-2">
-                  <span>{item.item_name} × {item.quantity}</span>
-                  <span>{rupiah(item.subtotal)}</span>
+                <div key={`${item.item_name}-${index}`} className="mb-3">
+                  <p className="font-bold">{item.item_name}</p>
+                  <div className="flex justify-between gap-2">
+                    <span>{item.quantity} × {rupiah(item.item_price)}</span>
+                    <span className="font-bold">{rupiah(item.subtotal)}</span>
+                  </div>
                 </div>
               ))}
-            </div>
 
-            <hr />
+              <div className="my-3 border-t border-dashed border-gray-400" />
 
-            <div className="flex justify-between py-3 font-extrabold">
-              <span>TOTAL</span>
-              <span>{rupiah(receipt.order.total_amount)}</span>
-            </div>
+              <div className="flex justify-between gap-2 text-sm font-extrabold">
+                <span>TOTAL</span>
+                <span>{rupiah(Number(receipt.order.total_amount || 0))}</span>
+              </div>
 
-            <div className="text-center text-sm">
-              <p>
+              <p className="mt-2">
                 Pembayaran: {receipt.order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
               </p>
-              {receipt.order.payment_method && (
-                <p className="text-xs">
-                  Metode: {receipt.order.payment_method === 'tunai' ? 'Tunai' : 'Non-Tunai'}
-                </p>
-              )}
+              <p>
+                Metode: {receipt.order.payment_method === 'tunai'
+                  ? 'Tunai'
+                  : receipt.order.payment_method === 'non_tunai'
+                    ? 'Non-Tunai'
+                    : '-'}
+              </p>
+
+              <div className="my-3 border-t border-dashed border-gray-400" />
+              <p className="text-center leading-relaxed">
+                Terima kasih telah berkunjung.<br />
+                Selamat menikmati pesanan Anda.
+              </p>
             </div>
 
-            <p className="mt-4 text-center text-sm">
-              Terima kasih telah berkunjung!
-              <br />
-              Selamat menikmati
-            </p>
-
-            <div className="no-print mt-5 space-y-2">
+            <div className="mt-4 grid grid-cols-2 gap-3">
               <button
-                onClick={() => window.print()}
-                className="w-full rounded-lg bg-green-800 p-3 font-bold text-white"
+                type="button"
+                onClick={() => setReceipt(null)}
+                className="rounded-xl border border-gray-300 px-4 py-3 text-sm font-bold text-gray-700"
               >
-                CETAK / SIMPAN PDF
+                Tutup
               </button>
               <button
-                onClick={() => setReceipt(null)}
-                className="w-full rounded-lg bg-gray-200 p-3 font-bold"
+                type="button"
+                onClick={handlePrintReceipt}
+                className="rounded-xl bg-green-800 px-4 py-3 text-sm font-extrabold text-white"
               >
-                TUTUP
+                CETAK STRUK
               </button>
             </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
+
