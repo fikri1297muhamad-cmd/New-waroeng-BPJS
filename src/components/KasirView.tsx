@@ -42,6 +42,8 @@ type Order = {
   created_at: unknown;
 };
 
+type OrderGroup = [string, Order[]];
+
 const cashierNavigation: {
   id: CashierPage;
   label: string;
@@ -198,6 +200,26 @@ function statusColor(status: string) {
   }
 }
 
+function groupOrdersByDate(orders: Order[]): OrderGroup[] {
+  const groups: Record<string, Order[]> = {};
+
+  orders.forEach(order => {
+    const key = getWibDateKey(order.created_at);
+
+    if (!groups[key]) {
+      groups[key] = [];
+    }
+
+    groups[key].push(order);
+  });
+
+  return Object.entries(groups).sort(([a], [b]) => {
+    if (a === 'tanggal-tidak-diketahui') return 1;
+    if (b === 'tanggal-tidak-diketahui') return -1;
+    return b.localeCompare(a);
+  });
+}
+
 export default function KasirView() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -328,25 +350,37 @@ export default function KasirView() {
     );
   }, [orders, search]);
 
-  const groupedOrders = useMemo(() => {
-    const groups: Record<string, Order[]> = {};
+  const groupedOrders = useMemo(
+    () => groupOrdersByDate(filteredOrders),
+    [filteredOrders]
+  );
 
-    filteredOrders.forEach(order => {
-      const key = getWibDateKey(order.created_at);
+  const activeOrders = useMemo(
+    () => orders.filter(order =>
+      ['menunggu', 'diproses', 'siap'].includes(order.status)
+    ),
+    [orders]
+  );
 
-      if (!groups[key]) {
-        groups[key] = [];
-      }
+  const filteredActiveOrders = useMemo(() => {
+    const keyword = search.trim().toLowerCase();
 
-      groups[key].push(order);
-    });
+    if (!keyword) return activeOrders;
 
-    return Object.entries(groups).sort(([a], [b]) => {
-      if (a === 'tanggal-tidak-diketahui') return 1;
-      if (b === 'tanggal-tidak-diketahui') return -1;
-      return b.localeCompare(a);
-    });
-  }, [filteredOrders]);
+    return activeOrders.filter(order =>
+      String(order.order_code || '')
+        .toLowerCase()
+        .includes(keyword) ||
+      String(order.customer_name || '')
+        .toLowerCase()
+        .includes(keyword)
+    );
+  }, [activeOrders, search]);
+
+  const groupedActiveOrders = useMemo(
+    () => groupOrdersByDate(filteredActiveOrders),
+    [filteredActiveOrders]
+  );
 
   useEffect(() => {
     if (!selectedOrderId || !showDetail) return;
@@ -415,6 +449,17 @@ export default function KasirView() {
     };
   }, [selectedOrderId]);
 
+  useEffect(() => {
+    if (
+      activePage === 'pesanan' &&
+      selectedOrder &&
+      !['menunggu', 'diproses', 'siap'].includes(selectedOrder.status)
+    ) {
+      setSelectedOrderId('');
+      setShowDetail(true);
+    }
+  }, [activePage, selectedOrder]);
+
   const toggleGroup = (key: string) => {
     setCollapsedGroups(previous => ({
       ...previous,
@@ -427,6 +472,26 @@ export default function KasirView() {
     status: string
   ) => {
     if (processingStatus) return;
+
+    const order = orders.find(item => item.id === orderId);
+
+    if (!order) {
+      setError('Pesanan tidak ditemukan.');
+      return;
+    }
+
+    const allowedNextStatus: Record<string, string> = {
+      menunggu: 'diproses',
+      diproses: 'siap',
+      siap: 'selesai'
+    };
+
+    if (allowedNextStatus[order.status] !== status) {
+      setError(
+        'Perubahan status tidak sesuai urutan pelayanan pesanan.'
+      );
+      return;
+    }
 
     setProcessingStatus(true);
     setError('');
@@ -537,12 +602,17 @@ export default function KasirView() {
     }
   };
 
-  const renderOrderList = () => (
+  const renderOrderList = (
+    groups: OrderGroup[],
+    count: number,
+    heading: string,
+    emptyMessage: string
+  ) => (
     <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-extrabold text-gray-900">
-            Pesanan Masuk
+            {heading}
           </h2>
           <p className="text-xs text-gray-500">
             Pilih pesanan untuk melihat detail
@@ -550,7 +620,7 @@ export default function KasirView() {
         </div>
 
         <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
-          {filteredOrders.length} Pesanan
+          {count} Pesanan
         </span>
       </div>
 
@@ -566,15 +636,15 @@ export default function KasirView() {
         <div className="py-10 text-center text-sm text-gray-500">
           Memuat pesanan...
         </div>
-      ) : filteredOrders.length === 0 ? (
+      ) : count === 0 ? (
         <div className="rounded-xl bg-gray-50 p-8 text-center text-sm text-gray-500">
           {search
             ? 'Pesanan tidak ditemukan.'
-            : 'Belum ada pesanan masuk.'}
+            : emptyMessage}
         </div>
       ) : (
         <div className="max-h-[750px] space-y-4 overflow-y-auto pr-1">
-          {groupedOrders.map(([dateKey, dateOrders]) => {
+          {groups.map(([dateKey, dateOrders]) => {
             const isToday = dateKey === getTodayWibKey();
             const isSearching = Boolean(search.trim());
 
@@ -866,7 +936,7 @@ export default function KasirView() {
                   onClick={() => changeStatus(selectedOrder.id, 'diproses')}
                   disabled={
                     processingStatus ||
-                    ['selesai', 'dibatalkan', 'diproses'].includes(selectedOrder.status)
+                    selectedOrder.status !== 'menunggu'
                   }
                   className="rounded-lg bg-blue-100 p-2 text-xs font-bold text-blue-800 disabled:opacity-40"
                 >
@@ -878,11 +948,11 @@ export default function KasirView() {
                   onClick={() => changeStatus(selectedOrder.id, 'siap')}
                   disabled={
                     processingStatus ||
-                    ['selesai', 'dibatalkan', 'siap'].includes(selectedOrder.status)
+                    selectedOrder.status !== 'diproses'
                   }
                   className="rounded-lg bg-amber-100 p-2 text-xs font-bold text-amber-800 disabled:opacity-40"
                 >
-                  Siap
+                  Siap Disajikan
                 </button>
 
                 <button
@@ -890,13 +960,18 @@ export default function KasirView() {
                   onClick={() => changeStatus(selectedOrder.id, 'selesai')}
                   disabled={
                     processingStatus ||
-                    ['selesai', 'dibatalkan'].includes(selectedOrder.status)
+                    selectedOrder.status !== 'siap'
                   }
                   className="col-span-2 rounded-lg bg-emerald-100 p-2 text-xs font-bold text-emerald-800 disabled:opacity-40"
                 >
                   Selesai
                 </button>
               </div>
+
+              <p className="mt-3 text-xs leading-relaxed text-gray-500">
+                Urutan pelayanan: Pesanan Baru → Diproses →
+                Siap Disajikan → Selesai.
+              </p>
             </div>
           </>
         )}
@@ -959,7 +1034,12 @@ export default function KasirView() {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => setActivePage(item.id)}
+                    onClick={() => {
+                      setActivePage(item.id);
+                      setSearch('');
+                      setShowDetail(true);
+                      setError('');
+                    }}
                     aria-current={isActive ? 'page' : undefined}
                     className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${
                       isActive
@@ -982,6 +1062,18 @@ export default function KasirView() {
           </aside>
 
           <section className="min-w-0 flex-1">
+            {error && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                {error}
+                <button
+                  onClick={() => setError('')}
+                  className="ml-3 font-bold underline"
+                >
+                  Tutup
+                </button>
+              </div>
+            )}
+
             {activePage === 'dashboard' ? (
               <>
                 <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -999,18 +1091,6 @@ export default function KasirView() {
                     Sistem Terhubung
                   </div>
                 </div>
-
-                {error && (
-                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-                    {error}
-                    <button
-                      onClick={() => setError('')}
-                      className="ml-3 font-bold underline"
-                    >
-                      Tutup
-                    </button>
-                  </div>
-                )}
 
                 <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
                   <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
@@ -1110,13 +1190,75 @@ export default function KasirView() {
                   )}
 
                   <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
-                    {renderOrderList()}
+                    {renderOrderList(
+                      groupedOrders,
+                      filteredOrders.length,
+                      'Pesanan Masuk',
+                      'Belum ada pesanan masuk.'
+                    )}
                   </div>
                 </div>
 
                 <p className="mt-5 text-center text-xs text-gray-400">
                   WAROENG BPJS · Dashboard Kasir
                 </p>
+              </>
+            ) : activePage === 'pesanan' ? (
+              <>
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h1 className="text-2xl font-extrabold text-green-950">
+                      Pesanan Aktif
+                    </h1>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Pesanan yang masih dalam proses pelayanan
+                    </p>
+                  </div>
+
+                  <span className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-bold text-green-900">
+                    {activeOrders.length} Pesanan Aktif
+                  </span>
+                </div>
+
+                <div className="mb-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-amber-100 bg-white p-3">
+                    <p className="text-xs text-gray-500">BARU</p>
+                    <p className="mt-1 text-xl font-extrabold text-amber-700">
+                      {activeOrders.filter(order => order.status === 'menunggu').length}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-blue-100 bg-white p-3">
+                    <p className="text-xs text-gray-500">DIPROSES</p>
+                    <p className="mt-1 text-xl font-extrabold text-blue-700">
+                      {activeOrders.filter(order => order.status === 'diproses').length}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-emerald-100 bg-white p-3">
+                    <p className="text-xs text-gray-500">SIAP</p>
+                    <p className="mt-1 text-xl font-extrabold text-emerald-700">
+                      {activeOrders.filter(order => order.status === 'siap').length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
+                  {showDetail && (
+                    <div className="order-1 xl:order-2">
+                      {renderOrderDetail()}
+                    </div>
+                  )}
+
+                  <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
+                    {renderOrderList(
+                      groupedActiveOrders,
+                      filteredActiveOrders.length,
+                      'Daftar Pesanan Aktif',
+                      'Tidak ada pesanan aktif saat ini.'
+                    )}
+                  </div>
+                </div>
               </>
             ) : (
               <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
