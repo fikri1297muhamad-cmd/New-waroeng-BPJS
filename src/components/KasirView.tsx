@@ -15,6 +15,14 @@ import { db, auth } from '../firebase';
 
 type PaymentMethod = 'tunai' | 'non_tunai';
 
+type CashierPage =
+  | 'dashboard'
+  | 'pesanan'
+  | 'riwayat'
+  | 'laporan'
+  | 'meja'
+  | 'akun';
+
 type OrderItem = {
   item_name: string;
   item_price: number;
@@ -33,6 +41,50 @@ type Order = {
   payment_method?: PaymentMethod;
   created_at: unknown;
 };
+
+const cashierNavigation: {
+  id: CashierPage;
+  label: string;
+  icon: string;
+  description: string;
+}[] = [
+  {
+    id: 'dashboard',
+    label: 'Dashboard',
+    icon: '▦',
+    description: 'Ringkasan dan pengelolaan pesanan.'
+  },
+  {
+    id: 'pesanan',
+    label: 'Pesanan Aktif',
+    icon: '▤',
+    description: 'Pengelolaan pesanan yang masih berjalan.'
+  },
+  {
+    id: 'riwayat',
+    label: 'Riwayat Pesanan',
+    icon: '◷',
+    description: 'Daftar pesanan selesai dan dibatalkan.'
+  },
+  {
+    id: 'laporan',
+    label: 'Laporan Kas',
+    icon: 'Rp',
+    description: 'Rekap pemasukan dan transaksi kasir.'
+  },
+  {
+    id: 'meja',
+    label: 'Status Meja',
+    icon: '▦',
+    description: 'Pemantauan kondisi seluruh meja.'
+  },
+  {
+    id: 'akun',
+    label: 'Akun Kasir',
+    icon: '♙',
+    description: 'Profil dan aktivitas akun kasir.'
+  }
+];
 
 const rupiah = (value: number) =>
   new Intl.NumberFormat('id-ID', {
@@ -150,6 +202,13 @@ export default function KasirView() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  const [activePage, setActivePage] =
+    useState<CashierPage>('dashboard');
+
+  const activePageInfo = cashierNavigation.find(
+    item => item.id === activePage
+  );
 
   const [search, setSearch] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState('');
@@ -892,23 +951,27 @@ export default function KasirView() {
               </p>
             </div>
 
-            <nav className="grid grid-cols-3 gap-2 lg:grid-cols-1">
-              <div className="rounded-xl bg-white px-3 py-3 text-sm font-bold text-green-900">
-                <span className="mr-2">▦</span>
-                Dashboard
-              </div>
+            <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
+              {cashierNavigation.map(item => {
+                const isActive = activePage === item.id;
 
-              {['Menu', 'Pesanan', 'Riwayat', 'Laporan', 'Pengaturan'].map(
-                item => (
-                  <div
-                    key={item}
-                    className="rounded-xl px-3 py-3 text-center text-sm text-green-100 opacity-70 lg:text-left"
-                    title="Menu ini akan dikerjakan pada tahap berikutnya"
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActivePage(item.id)}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={`flex items-center gap-2 rounded-xl px-3 py-3 text-left text-sm font-bold transition ${
+                      isActive
+                        ? 'bg-white text-green-900 shadow-sm'
+                        : 'text-green-100 hover:bg-green-800'
+                    }`}
                   >
-                    {item}
-                  </div>
-                )
-              )}
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
             </nav>
 
             <div className="mt-6 hidden rounded-xl bg-green-800 p-3 text-xs leading-relaxed text-green-100 lg:block">
@@ -919,139 +982,179 @@ export default function KasirView() {
           </aside>
 
           <section className="min-w-0 flex-1">
-            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-extrabold text-green-950">
-                  Dashboard Kasir
-                </h1>
-                <p className="mt-1 text-sm text-gray-500">
-                  Ringkasan dan pengelolaan pesanan pelanggan
+            {activePage === 'dashboard' ? (
+              <>
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h1 className="text-2xl font-extrabold text-green-950">
+                      Dashboard Kasir
+                    </h1>
+                    <p className="mt-1 text-sm text-gray-500">
+                      Ringkasan dan pengelolaan pesanan pelanggan
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-semibold text-green-900">
+                    <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
+                    Sistem Terhubung
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+                    {error}
+                    <button
+                      onClick={() => setError('')}
+                      className="ml-3 font-bold underline"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                )}
+
+                <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+                  <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold text-gray-500">
+                      TOTAL PESANAN
+                    </p>
+                    <p className="mt-2 text-2xl font-extrabold text-green-950">
+                      {summary.totalOrders}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Semua pesanan
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold text-gray-500">
+                      BELUM LUNAS
+                    </p>
+                    <p className="mt-2 text-2xl font-extrabold text-amber-700">
+                      {summary.unpaidCount}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      {rupiah(summary.unpaidAmount)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold text-gray-500">
+                      PESANAN LUNAS
+                    </p>
+                    <p className="mt-2 text-2xl font-extrabold text-blue-800">
+                      {summary.paidCount}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Pembayaran berhasil
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold text-gray-500">
+                      SEDANG DIPROSES
+                    </p>
+                    <p className="mt-2 text-2xl font-extrabold text-emerald-800">
+                      {summary.processingCount}
+                    </p>
+                    <p className="mt-1 text-xs text-gray-400">
+                      Pesanan aktif
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mb-5 rounded-2xl bg-green-900 p-4 text-white shadow-md sm:p-5">
+                  <div className="mb-4">
+                    <h2 className="text-lg font-extrabold">
+                      Ringkasan Kas
+                    </h2>
+                    <p className="text-xs text-green-200">
+                      Dihitung dari pesanan yang sudah LUNAS
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                    <div>
+                      <p className="text-xs text-green-200">
+                        TOTAL PEMASUKAN
+                      </p>
+                      <p className="mt-1 text-xl font-extrabold">
+                        {rupiah(summary.totalIncome)}
+                      </p>
+                    </div>
+
+                    <div className="border-t border-green-700 pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                      <p className="text-xs text-green-200">
+                        TUNAI
+                      </p>
+                      <p className="mt-1 text-xl font-extrabold">
+                        {rupiah(summary.cashIncome)}
+                      </p>
+                    </div>
+
+                    <div className="border-t border-green-700 pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                      <p className="text-xs text-green-200">
+                        NON-TUNAI
+                      </p>
+                      <p className="mt-1 text-xl font-extrabold">
+                        {rupiah(summary.nonCashIncome)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
+                  {showDetail && (
+                    <div className="order-1 xl:order-2">
+                      {renderOrderDetail()}
+                    </div>
+                  )}
+
+                  <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
+                    {renderOrderList()}
+                  </div>
+                </div>
+
+                <p className="mt-5 text-center text-xs text-gray-400">
+                  WAROENG BPJS · Dashboard Kasir
                 </p>
-              </div>
+              </>
+            ) : (
+              <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-100 text-xl font-extrabold text-green-900">
+                    {activePageInfo?.icon}
+                  </div>
 
-              <div className="rounded-xl border border-green-100 bg-white px-4 py-2 text-sm font-semibold text-green-900">
-                <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
-                Sistem Terhubung
-              </div>
-            </div>
+                  <div>
+                    <h1 className="text-xl font-extrabold text-green-950">
+                      {activePageInfo?.label}
+                    </h1>
+                    <p className="mt-1 text-sm text-gray-500">
+                      {activePageInfo?.description}
+                    </p>
+                  </div>
+                </div>
 
-            {error && (
-              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800">
-                {error}
+                <div className="rounded-xl border border-green-100 bg-green-50 p-4">
+                  <p className="font-bold text-green-900">
+                    Halaman sedang disiapkan
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-green-800">
+                    Navigasi ini sudah aktif. Fitur dan tampilan halaman
+                    akan dibuat pada tahap berikutnya agar tidak mengganggu
+                    Dashboard dan fungsi kasir yang sudah berjalan.
+                  </p>
+                </div>
+
                 <button
-                  onClick={() => setError('')}
-                  className="ml-3 font-bold underline"
+                  type="button"
+                  onClick={() => setActivePage('dashboard')}
+                  className="mt-5 rounded-xl bg-green-800 px-5 py-3 text-sm font-bold text-white hover:bg-green-900"
                 >
-                  Tutup
+                  Kembali ke Dashboard
                 </button>
               </div>
             )}
-
-            <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-              <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold text-gray-500">
-                  TOTAL PESANAN
-                </p>
-                <p className="mt-2 text-2xl font-extrabold text-green-950">
-                  {summary.totalOrders}
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  Semua pesanan
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold text-gray-500">
-                  BELUM LUNAS
-                </p>
-                <p className="mt-2 text-2xl font-extrabold text-amber-700">
-                  {summary.unpaidCount}
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  {rupiah(summary.unpaidAmount)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold text-gray-500">
-                  PESANAN LUNAS
-                </p>
-                <p className="mt-2 text-2xl font-extrabold text-blue-800">
-                  {summary.paidCount}
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  Pembayaran berhasil
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
-                <p className="text-xs font-semibold text-gray-500">
-                  SEDANG DIPROSES
-                </p>
-                <p className="mt-2 text-2xl font-extrabold text-emerald-800">
-                  {summary.processingCount}
-                </p>
-                <p className="mt-1 text-xs text-gray-400">
-                  Pesanan aktif
-                </p>
-              </div>
-            </div>
-
-            <div className="mb-5 rounded-2xl bg-green-900 p-4 text-white shadow-md sm:p-5">
-              <div className="mb-4">
-                <h2 className="text-lg font-extrabold">
-                  Ringkasan Kas
-                </h2>
-                <p className="text-xs text-green-200">
-                  Dihitung dari pesanan yang sudah LUNAS
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div>
-                  <p className="text-xs text-green-200">
-                    TOTAL PEMASUKAN
-                  </p>
-                  <p className="mt-1 text-xl font-extrabold">
-                    {rupiah(summary.totalIncome)}
-                  </p>
-                </div>
-
-                <div className="border-t border-green-700 pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-                  <p className="text-xs text-green-200">
-                    TUNAI
-                  </p>
-                  <p className="mt-1 text-xl font-extrabold">
-                    {rupiah(summary.cashIncome)}
-                  </p>
-                </div>
-
-                <div className="border-t border-green-700 pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-                  <p className="text-xs text-green-200">
-                    NON-TUNAI
-                  </p>
-                  <p className="mt-1 text-xl font-extrabold">
-                    {rupiah(summary.nonCashIncome)}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className={`grid grid-cols-1 gap-5 ${showDetail ? 'xl:grid-cols-5' : 'xl:grid-cols-1'}`}>
-              {showDetail && (
-                <div className="order-1 xl:order-2">
-                  {renderOrderDetail()}
-                </div>
-              )}
-
-              <div className={`order-2 ${showDetail ? 'xl:order-1 xl:col-span-3' : 'xl:col-span-1'}`}>
-                {renderOrderList()}
-              </div>
-            </div>
-
-            <p className="mt-5 text-center text-xs text-gray-400">
-              WAROENG BPJS · Dashboard Kasir
-            </p>
           </section>
         </div>
       </main>
