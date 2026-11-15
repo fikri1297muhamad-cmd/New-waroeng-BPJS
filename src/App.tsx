@@ -5,10 +5,13 @@ import { auth, db } from './firebase';
 import StaffLogin from './components/StaffLogin';
 import AdminView from './components/AdminView';
 import KasirView from './components/KasirView';
-import type { StaffRole } from './types';
+import type { StaffRole, MenuItem, PromoBanner } from './types';
 import { useEffect, useRef, useState } from 'react';
-import { listenToMenus, createOrder } from './services/firestore';
-import type { MenuItem } from './types';
+import {
+  listenToMenus,
+  listenToBanners,
+  createOrder
+} from './services/firestore';
 import Cart from './components/Cart';
 import CustomerForm from './components/CustomerForm';
 import OrderConfirmation from './components/OrderConfirmation';
@@ -35,6 +38,7 @@ const rupiah = (price: number) =>
 
 export default function App() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
+  const [banners, setBanners] = useState<PromoBanner[]>([]);
   const [pressedMenuId, setPressedMenuId] = useState<string | null>(null);
 
   const [cart, setCart] = useState<CartItem[]>(() => {
@@ -370,6 +374,28 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = listenToBanners(
+      (data) => {
+        setBanners(data);
+      },
+      (err) => {
+        console.error('Gagal memuat banner:', err);
+        setBanners([]);
+      }
+    );
+
+    return () => unsubscribe();
+  }, []);
+
+  const activeBanners = banners.filter(
+    (banner) =>
+      banner.is_active &&
+      (banner.title.trim() !== '' ||
+        banner.description.trim() !== '' ||
+        banner.image_url.trim() !== '')
+  );
+
   const addToCart = (menu: MenuItem) => {
     setCart((current) => {
       const found = current.find(
@@ -490,7 +516,7 @@ export default function App() {
 
   if (authChecking) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-amber-50 p-4">
+      <main className="flex min-h-screen items-center justify-center bg-green-50 p-4">
         <div className="rounded-xl bg-white px-6 py-5 text-center shadow">
           <p className="font-semibold text-green-800">
             Memeriksa sesi...
@@ -538,7 +564,7 @@ export default function App() {
 
   if (successOrder) {
     return (
-      <main className="receipt-screen min-h-screen bg-amber-50 p-4">
+      <main className="receipt-screen min-h-screen bg-green-50 p-4">
         <style>{`
           @page {
             margin: 12mm;
@@ -586,9 +612,9 @@ export default function App() {
             </h1>
 
             <p className="mt-2 text-xs leading-relaxed text-gray-600">
-              Jl. Kandangsapi 001/002 No. 01,
-              Desa Tanjungsari, Kecamatan Sukaluyu,
-              Kabupaten Cianjur
+              Jl. Kandang Sapi 001/002 No. 01 Desa Tanjungsari
+              <br />
+              Kecamatan Sukaluyu, Kabupaten Cianjur
             </p>
           </div>
 
@@ -677,8 +703,8 @@ export default function App() {
             </span>
           </div>
 
-          <div className="mt-5 rounded-xl bg-amber-50 p-4 text-sm leading-relaxed text-gray-800">
-            <p className="font-extrabold text-amber-800">
+          <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm leading-relaxed text-gray-800">
+            <p className="font-extrabold text-green-800">
               INFORMASI PEMBAYARAN
             </p>
 
@@ -717,59 +743,149 @@ export default function App() {
   }
 
   return (
-    <main className="min-h-screen bg-amber-50 pb-80">
+    <main className="min-h-screen bg-green-50 pb-80">
       {/* HEADER PELANGGAN */}
-      <header className="bg-green-800 px-4 py-5 text-white sm:px-6 sm:py-7">
+      <header className="bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-5">
         <div className="mx-auto max-w-5xl">
-          <div className="flex items-start justify-between gap-2 sm:gap-4">
-            <div className="flex min-w-0 items-center gap-2 sm:gap-4">
-              <img
-                src="/logo.png"
-                alt="Logo Waroeng BPJS"
-                className="h-20 w-20 shrink-0 object-contain sm:h-28 sm:w-28"
-              />
+          <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 sm:grid-cols-[100px_minmax(0,1fr)_auto] sm:gap-4">
+            <img
+              src="/logo.png"
+              alt="Logo Waroeng BPJS"
+              className="h-16 w-16 object-contain sm:h-24 sm:w-24"
+            />
 
-              <div className="min-w-0">
-                <h1 className="text-xl font-extrabold leading-tight tracking-wide sm:text-4xl">
-                  WAROENG BPJS
-                </h1>
+            <div className="min-w-0 text-center">
+              <h1 className="text-lg font-extrabold leading-tight tracking-wide text-green-900 sm:text-4xl">
+                WAROENG BPJS
+              </h1>
 
-                <p className="mt-2 text-xs font-semibold text-green-100 sm:text-base">
-                  Budget Pas, Jajanan Sehat
-                </p>
-              </div>
+              <p className="mt-1 text-[10px] font-semibold text-green-700 sm:text-base">
+                Budget pas jajanan sehat
+              </p>
             </div>
 
             <button
               onClick={() => setShowStaffLogin(true)}
-              className="shrink-0 rounded-lg bg-white px-2 py-2 text-[10px] font-bold text-green-900 shadow-sm transition hover:bg-green-50 sm:px-4 sm:py-2 sm:text-sm"
+              className="rounded-lg bg-green-800 px-2.5 py-2 text-[10px] font-bold text-white shadow-sm transition hover:bg-green-900 sm:px-4 sm:text-sm"
             >
-              Login Admin / Kasir
+              Login
             </button>
           </div>
 
-          <p className="mt-4 border-t border-green-700 pt-3 text-xs leading-relaxed text-green-100 sm:mt-5 sm:text-sm">
-            Jl. Kandangsapi 001/002 No. 01,
-            Desa Tanjungsari, Kecamatan Sukaluyu,
-            Kabupaten Cianjur
-          </p>
+          <div className="mt-3 border-t border-green-100 pt-3 text-center text-[11px] leading-relaxed text-gray-600 sm:text-sm">
+            Jl. Kandang Sapi 001/002 No. 01 Desa Tanjungsari
+            <br />
+            Kecamatan Sukaluyu, Kabupaten Cianjur
+          </div>
         </div>
       </header>
 
-      <section className="mx-auto max-w-5xl px-4 py-6">
-        <h2 className="mb-4 text-xl font-bold">
-          Pilihan Menu
-        </h2>
+      <section className="mx-auto max-w-5xl px-4 py-5">
+        {/* BANNER PROMOSI DINAMIS */}
+        {activeBanners.length > 0 && (
+          <div className="mb-6 space-y-4">
+            {activeBanners.map((banner) => (
+              <article
+                key={banner.id}
+                className="overflow-hidden rounded-2xl border border-green-100 bg-white shadow-sm"
+              >
+                {banner.image_url && (
+                  <img
+                    src={banner.image_url}
+                    alt={banner.title || 'Banner promosi Waroeng BPJS'}
+                    className="max-h-64 w-full object-cover sm:max-h-80"
+                  />
+                )}
+
+                {(banner.title || banner.description) && (
+                  <div className="p-4 sm:p-5">
+                    {banner.title && (
+                      <h2 className="text-lg font-extrabold text-green-900 sm:text-2xl">
+                        {banner.title}
+                      </h2>
+                    )}
+
+                    {banner.description && (
+                      <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-gray-600 sm:text-base">
+                        {banner.description}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+
+        {/* STATUS QR MEJA DAN DATA PEMESAN */}
+        <div className="mb-7">
+          <div className="mb-4 rounded-2xl border border-green-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-extrabold text-gray-800">
+                STATUS QR MEJA
+              </p>
+
+              <span
+                className={`rounded-full px-3 py-1 text-[10px] font-bold ${
+                  tableQrVerified
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {tableQrVerified ? 'TERVERIFIKASI' : 'BELUM TERVERIFIKASI'}
+              </span>
+            </div>
+
+            <p
+              className={`mt-2 text-sm ${
+                tableQrVerified
+                  ? 'font-semibold text-green-700'
+                  : 'text-gray-600'
+              }`}
+            >
+              {tableQrMessage}
+            </p>
+
+            {tableQrChecking && (
+              <p className="mt-2 text-xs text-gray-500">
+                Mohon tunggu, sistem sedang memeriksa QR.
+              </p>
+            )}
+
+            {tableQrVerified && (
+              <p className="mt-3 text-lg font-extrabold text-green-900">
+                Meja {String(tableNumber).padStart(2, '0')}
+              </p>
+            )}
+          </div>
+
+          <CustomerForm
+            tableNumber={tableNumber || null}
+            tableQrVerified={tableQrVerified}
+            onSubmit={startConfirmation}
+          />
+        </div>
+
+        {/* PILIHAN MENU */}
+        <div className="mb-4">
+          <h2 className="text-xl font-extrabold text-green-900 sm:text-2xl">
+            Pilihan Menu
+          </h2>
+
+          <p className="mt-1 text-xs text-gray-500 sm:text-sm">
+            Pilih makanan, minuman, dan cemilan favoritmu.
+          </p>
+        </div>
 
         <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
           {categories.map((item) => (
             <button
               key={item.id}
               onClick={() => setCategory(item.id)}
-              className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold ${
+              className={`shrink-0 rounded-full px-5 py-2 text-sm font-semibold transition ${
                 category === item.id
-                  ? 'bg-green-800 text-white'
-                  : 'bg-white text-gray-700'
+                  ? 'bg-green-800 text-white shadow-sm'
+                  : 'border border-green-100 bg-white text-gray-700 hover:bg-green-100'
               }`}
             >
               {item.label}
@@ -778,7 +894,7 @@ export default function App() {
         </div>
 
         {loading && (
-          <p className="py-10 text-center">
+          <p className="py-10 text-center text-green-800">
             Menghubungkan menu...
           </p>
         )}
@@ -790,7 +906,7 @@ export default function App() {
         )}
 
         {!loading && !error && filteredMenus.length === 0 && (
-          <div className="rounded-xl bg-white p-8 text-center text-gray-600">
+          <div className="rounded-xl border border-green-100 bg-white p-8 text-center text-gray-600">
             Menu belum tersedia.
           </div>
         )}
@@ -799,7 +915,7 @@ export default function App() {
           {filteredMenus.map((item) => (
             <article
               key={item.id}
-              className="overflow-hidden rounded-2xl bg-white shadow-md"
+              className="overflow-hidden rounded-2xl border border-green-50 bg-white shadow-sm transition hover:shadow-md"
             >
               <div
                 className="relative aspect-[4/3] w-full bg-green-50"
@@ -827,7 +943,7 @@ export default function App() {
                   </div>
                 )}
 
-                <span className="absolute left-2 top-2 rounded-lg bg-black/70 px-3 py-1 text-[10px] font-semibold text-white sm:text-xs">
+                <span className="absolute left-2 top-2 rounded-lg bg-green-900/85 px-3 py-1 text-[10px] font-semibold capitalize text-white sm:text-xs">
                   {item.category}
                 </span>
               </div>
@@ -849,14 +965,14 @@ export default function App() {
                       HARGA
                     </p>
 
-                    <p className="text-sm font-extrabold text-amber-700 sm:text-base">
+                    <p className="text-sm font-extrabold text-green-800 sm:text-base">
                       {rupiah(Number(item.price) || 0)}
                     </p>
                   </div>
 
                   <button
                     onClick={() => addToCart(item)}
-                    className="shrink-0 rounded-lg bg-orange-500 px-2 py-2 text-[10px] font-bold text-white shadow-sm hover:bg-orange-600 sm:px-3 sm:py-2"
+                    className="shrink-0 rounded-lg bg-orange-500 px-2 py-2 text-[10px] font-bold text-white shadow-sm transition hover:bg-orange-600 sm:px-3 sm:py-2"
                   >
                     + Pesan
                   </button>
@@ -864,36 +980,6 @@ export default function App() {
               </div>
             </article>
           ))}
-        </div>
-
-        <div className="mt-8">
-          <div className="mb-4 rounded-xl border border-green-200 bg-white p-4">
-            <p className="font-bold text-gray-800">
-              STATUS QR MEJA
-            </p>
-
-            <p
-              className={`mt-2 text-sm ${
-                tableQrVerified
-                  ? 'font-semibold text-green-700'
-                  : 'text-gray-600'
-              }`}
-            >
-              {tableQrMessage}
-            </p>
-
-            {tableQrChecking && (
-              <p className="mt-2 text-xs text-gray-500">
-                Mohon tunggu, sistem sedang memeriksa QR.
-              </p>
-            )}
-          </div>
-
-          <CustomerForm
-            tableNumber={tableNumber || null}
-            tableQrVerified={tableQrVerified}
-            onSubmit={startConfirmation}
-          />
         </div>
 
         {orderError && (
