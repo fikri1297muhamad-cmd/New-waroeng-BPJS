@@ -1,3 +1,4 @@
+
 export type MenuCategory = 'makanan' | 'minuman' | 'cemilan';
 
 export type MenuItem = {
@@ -38,3 +39,11 @@ export type Order = {
 };
 
 export type StaffRole = 'admin' | 'kasir';
+
+export type PromoBanner = {
+  id: string;
+  title: string;
+  description: string;
+  image_url: string;
+  is_active: boolean;
+};
