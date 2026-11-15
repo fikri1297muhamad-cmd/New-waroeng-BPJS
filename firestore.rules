@@ -45,6 +45,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Banner dapat dibaca pelanggan.
+    // Hanya Admin yang boleh mengelola banner.
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
+    }
+
     match /orders/{orderId} {
       allow read: if isStaff();
 
