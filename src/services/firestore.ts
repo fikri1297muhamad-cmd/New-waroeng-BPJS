@@ -5,7 +5,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../firebase';
-import type { MenuItem } from '../types';
+import type { MenuItem, PromoBanner } from '../types';
 
 export function listenToMenus(
   callback: (menus: MenuItem[]) => void,
@@ -40,6 +40,33 @@ export function listenToMenus(
       callback(
         menus.filter((menu) => menu.is_available !== false)
       );
+    },
+    (error) => onError?.(error)
+  );
+}
+
+export function listenToBanners(
+  callback: (banners: PromoBanner[]) => void,
+  onError?: (error: Error) => void
+) {
+  const bannerCollection = collection(db, 'banners');
+
+  return onSnapshot(
+    bannerCollection,
+    (snapshot) => {
+      const banners = snapshot.docs.map((doc) => {
+        const raw = doc.data();
+
+        return {
+          id: doc.id,
+          title: String(raw.title ?? ''),
+          description: String(raw.description ?? ''),
+          image_url: String(raw.image_url ?? ''),
+          is_active: raw.is_active === true
+        } as PromoBanner;
+      });
+
+      callback(banners);
     },
     (error) => onError?.(error)
   );
