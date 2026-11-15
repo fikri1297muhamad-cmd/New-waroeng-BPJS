@@ -10,7 +10,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getAuth } from 'firebase/auth';
-import type { MenuItem } from '../types';
+import type { MenuItem, PromoBanner } from '../types';
 import QRCode from 'qrcode';
 
 const rupiah = (value: number) =>
@@ -53,10 +53,21 @@ export default function AdminView() {
   const [editingMenu, setEditingMenu] = useState<MenuItem | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState('');
 
-  // State pengelolaan QR meja
   const [qrItems, setQrItems] = useState<TableQrItem[]>([]);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrMessage, setQrMessage] = useState('');
+
+  // State pengelolaan banner
+  const [banners, setBanners] = useState<PromoBanner[]>([]);
+  const [bannerTitle, setBannerTitle] = useState('');
+  const [bannerDescription, setBannerDescription] = useState('');
+  const [bannerActive, setBannerActive] = useState(true);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreviewUrl, setBannerPreviewUrl] = useState('');
+  const [bannerExistingImageUrl, setBannerExistingImageUrl] = useState('');
+  const [editingBanner, setEditingBanner] = useState<PromoBanner | null>(null);
+  const [bannerError, setBannerError] = useState('');
+  const [bannerSaving, setBannerSaving] = useState(false);
 
   useEffect(() => {
     return onSnapshot(
@@ -77,6 +88,26 @@ export default function AdminView() {
   }, []);
 
   useEffect(() => {
+    return onSnapshot(
+      collection(db, 'banners'),
+      (snapshot) => {
+        setBanners(
+          snapshot.docs.map((item) => ({
+            id: item.id,
+            ...item.data()
+          })) as PromoBanner[]
+        );
+      },
+      (err) => {
+        console.error(err);
+        setBannerError(
+          'Gagal membaca data banner. Periksa aturan akses Firestore.'
+        );
+      }
+    );
+  }, []);
+
+  useEffect(() => {
     if (!selectedFile) {
       setPreviewUrl('');
       return;
@@ -87,6 +118,18 @@ export default function AdminView() {
 
     return () => URL.revokeObjectURL(url);
   }, [selectedFile]);
+
+  useEffect(() => {
+    if (!bannerFile) {
+      setBannerPreviewUrl('');
+      return;
+    }
+
+    const url = URL.createObjectURL(bannerFile);
+    setBannerPreviewUrl(url);
+
+    return () => URL.revokeObjectURL(url);
+  }, [bannerFile]);
 
   const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -108,6 +151,59 @@ export default function AdminView() {
     setSelectedFile(file);
   };
 
+  const handleBannerPhotoChange = (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setBannerError('File banner harus berupa foto.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setBannerError('Ukuran foto banner maksimal 5 MB.');
+      return;
+    }
+
+    setBannerError('');
+    setBannerFile(file);
+  };
+
+  const uploadImageToCloudinary = async (file: File): Promise<string> => {
+    const formData = new FormData();
+
+    formData.append('file', file);
+    formData.append('upload_preset', 'waroeng_bpjs');
+
+    const response = await fetch(
+      'https://api.cloudinary.com/v1_1/irwzbli/image/upload',
+      {
+        method: 'POST',
+        body: formData
+      }
+    );
+
+    const responseText = await response.text();
+    let result: any;
+
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      throw new Error('Respons Cloudinary tidak valid.');
+    }
+
+    if (!response.ok || !result.secure_url) {
+      throw new Error(
+        result.error?.message || 'Gagal mengunggah foto.'
+      );
+    }
+
+    return result.secure_url;
+  };
   const seedRestaurantTables = async () => {
     setSeedingTables(true);
     setSeedMessage('');
@@ -255,7 +351,6 @@ export default function AdminView() {
       );
     } catch (err) {
       console.error(err);
-
       setQrItems([]);
 
       setQrMessage(
@@ -406,6 +501,7 @@ export default function AdminView() {
     printWindow.document.close();
   };
 
+  // Menambah atau mengedit menu
   const addMenu = async () => {
     if (!name.trim() || !price || Number(price) <= 0) {
       setError('Nama dan harga menu wajib diisi dengan benar.');
@@ -421,35 +517,7 @@ export default function AdminView() {
         : '';
 
       if (selectedFile) {
-        const formData = new FormData();
-
-        formData.append('file', selectedFile);
-        formData.append('upload_preset', 'waroeng_bpjs');
-
-        const response = await fetch(
-          'https://api.cloudinary.com/v1_1/irwzbli5/image/upload',
-          {
-            method: 'POST',
-            body: formData
-          }
-        );
-
-        const responseText = await response.text();
-        let result: any;
-
-        try {
-          result = JSON.parse(responseText);
-        } catch {
-          throw new Error('Respons Cloudinary tidak valid.');
-        }
-
-        if (!response.ok || !result.secure_url) {
-          throw new Error(
-            result.error?.message || 'Gagal mengunggah foto.'
-          );
-        }
-
-        imageUrl = result.secure_url;
+        imageUrl = await uploadImageToCloudinary(selectedFile);
       }
 
       const productData = {
@@ -539,6 +607,115 @@ export default function AdminView() {
     }
   };
 
+  // Menyimpan banner baru atau perubahan banner
+  const saveBanner = async () => {
+    if (!bannerTitle.trim()) {
+      setBannerError('Judul banner wajib diisi.');
+      return;
+    }
+
+    if (!bannerFile && !bannerExistingImageUrl) {
+      setBannerError('Foto banner wajib dipilih.');
+      return;
+    }
+
+    setBannerSaving(true);
+    setBannerError('');
+
+    try {
+      let imageUrl = bannerExistingImageUrl;
+
+      if (bannerFile) {
+        imageUrl = await uploadImageToCloudinary(bannerFile);
+      }
+
+      const bannerData = {
+        title: bannerTitle.trim(),
+        description: bannerDescription.trim(),
+        image_url: imageUrl,
+        is_active: bannerActive
+      };
+
+      if (editingBanner) {
+        await updateDoc(
+          doc(db, 'banners', editingBanner.id),
+          bannerData
+        );
+
+        alert('Banner berhasil diperbarui.');
+      } else {
+        await addDoc(collection(db, 'banners'), {
+          ...bannerData,
+          created_at: new Date()
+        });
+
+        alert('Banner berhasil ditambahkan.');
+      }
+
+      cancelBannerEdit();
+    } catch (err) {
+      console.error(err);
+
+      setBannerError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal menyimpan banner.'
+      );
+    } finally {
+      setBannerSaving(false);
+    }
+  };
+
+  const startEditBanner = (banner: PromoBanner) => {
+    setEditingBanner(banner);
+    setBannerTitle(banner.title || '');
+    setBannerDescription(banner.description || '');
+    setBannerActive(banner.is_active === true);
+    setBannerFile(null);
+    setBannerExistingImageUrl(banner.image_url || '');
+    setBannerError('');
+
+    window.scrollTo({
+      top: 0,
+      behavior: 'smooth'
+    });
+  };
+
+  const cancelBannerEdit = () => {
+    setEditingBanner(null);
+    setBannerTitle('');
+    setBannerDescription('');
+    setBannerActive(true);
+    setBannerFile(null);
+    setBannerExistingImageUrl('');
+    setBannerError('');
+  };
+
+  const toggleBannerStatus = async (banner: PromoBanner) => {
+    try {
+      await updateDoc(doc(db, 'banners', banner.id), {
+        is_active: !banner.is_active
+      });
+    } catch (err) {
+      console.error(err);
+      setBannerError('Gagal mengubah status banner.');
+    }
+  };
+
+  const removeBanner = async (banner: PromoBanner) => {
+    if (!window.confirm(`Hapus banner "${banner.title}"?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'banners', banner.id));
+
+      if (editingBanner?.id === banner.id) {
+        cancelBannerEdit();
+      }
+    } catch (err) {
+      console.error(err);
+      setBannerError('Gagal menghapus banner.');
+    }
+  };
   return (
     <main className="min-h-screen bg-amber-50 p-4">
       <div className="mx-auto max-w-4xl">
@@ -547,9 +724,10 @@ export default function AdminView() {
         </h1>
 
         <p className="mt-1 text-sm text-gray-500">
-          Pengelolaan produk dan harga menu
+          Pengelolaan produk, banner promosi, dan QR meja
         </p>
 
+        {/* Pengaturan meja */}
         <section className="mt-4 rounded-2xl bg-green-100 p-4">
           <h2 className="font-bold text-green-900">
             Pengaturan Meja Restoran
@@ -649,6 +827,207 @@ export default function AdminView() {
               </div>
             </>
           )}
+        </section>
+
+        {/* Pengelolaan Banner Promosi */}
+        <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-bold text-green-900">
+            Pengelolaan Banner Promosi
+          </h2>
+
+          <p className="mt-1 text-sm text-gray-600">
+            Tambahkan promosi yang akan ditampilkan pada halaman pelanggan.
+            Banner dapat diaktifkan atau dinonaktifkan kapan saja.
+          </p>
+
+          <div className="mt-4 rounded-xl border p-4">
+            <h3 className="mb-3 font-bold text-gray-800">
+              {editingBanner ? 'Edit Banner' : 'Tambah Banner Baru'}
+            </h3>
+
+            <label className="mb-2 block text-sm font-semibold">
+              Judul Banner *
+            </label>
+
+            <input
+              value={bannerTitle}
+              onChange={(e) => setBannerTitle(e.target.value)}
+              maxLength={100}
+              placeholder="Contoh: Promo Hemat Hari Ini"
+              className="mb-3 w-full rounded-xl border p-3"
+            />
+
+            <label className="mb-2 block text-sm font-semibold">
+              Deskripsi Banner
+            </label>
+
+            <textarea
+              value={bannerDescription}
+              onChange={(e) => setBannerDescription(e.target.value)}
+              maxLength={300}
+              placeholder="Tuliskan informasi promosi..."
+              className="mb-3 w-full rounded-xl border p-3"
+              rows={3}
+            />
+
+            <div className="mb-3 rounded-xl border border-dashed p-4">
+              <label className="mb-2 block font-bold">
+                Foto Banner *
+              </label>
+
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleBannerPhotoChange}
+                className="w-full text-sm"
+              />
+
+              {(bannerPreviewUrl || bannerExistingImageUrl) && (
+                <div className="mt-3">
+                  <p className="mb-2 text-sm text-gray-500">
+                    Pratinjau banner:
+                  </p>
+
+                  <img
+                    src={bannerPreviewUrl || bannerExistingImageUrl}
+                    alt="Pratinjau banner"
+                    className="max-h-56 w-full rounded-xl object-cover"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBannerFile(null);
+                      setBannerExistingImageUrl('');
+                    }}
+                    className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700"
+                  >
+                    Hapus Foto
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <label className="flex items-center gap-3 rounded-xl bg-green-50 p-3">
+              <input
+                type="checkbox"
+                checked={bannerActive}
+                onChange={(e) => setBannerActive(e.target.checked)}
+                className="h-5 w-5 accent-green-800"
+              />
+              <span className="text-sm font-semibold text-green-900">
+                Aktifkan banner setelah disimpan
+              </span>
+            </label>
+
+            {bannerError && (
+              <p className="mt-3 rounded-lg bg-red-100 p-3 text-sm text-red-800">
+                {bannerError}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={saveBanner}
+              disabled={bannerSaving}
+              className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:opacity-50"
+            >
+              {bannerSaving
+                ? 'Menyimpan Banner...'
+                : editingBanner
+                  ? 'Simpan Perubahan Banner'
+                  : 'Simpan Banner'}
+            </button>
+
+            {editingBanner && (
+              <button
+                type="button"
+                onClick={cancelBannerEdit}
+                className="mt-2 w-full rounded-xl bg-gray-200 py-3 font-bold text-gray-700"
+              >
+                Batal Edit Banner
+              </button>
+            )}
+          </div>
+
+          <div className="mt-5">
+            <h3 className="mb-3 font-bold text-gray-800">
+              Daftar Banner ({banners.length})
+            </h3>
+
+            {banners.length === 0 ? (
+              <p className="rounded-xl bg-gray-50 p-4 text-sm text-gray-500">
+                Belum ada banner promosi.
+              </p>
+            ) : (
+              <div className="space-y-4">
+                {banners.map((banner) => (
+                  <article
+                    key={banner.id}
+                    className="overflow-hidden rounded-xl border"
+                  >
+                    {banner.image_url && (
+                      <img
+                        src={banner.image_url}
+                        alt={banner.title}
+                        className="max-h-52 w-full object-cover"
+                      />
+                    )}
+
+                    <div className="p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h4 className="font-bold text-gray-900">
+                          {banner.title}
+                        </h4>
+
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            banner.is_active
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-200 text-gray-600'
+                          }`}
+                        >
+                          {banner.is_active ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </div>
+
+                      {banner.description && (
+                        <p className="mt-2 text-sm text-gray-600">
+                          {banner.description}
+                        </p>
+                      )}
+
+                      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <button
+                          type="button"
+                          onClick={() => startEditBanner(banner)}
+                          className="rounded-lg bg-blue-100 px-3 py-2 text-sm font-semibold text-blue-800"
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => toggleBannerStatus(banner)}
+                          className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800"
+                        >
+                          {banner.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => removeBanner(banner)}
+                          className="rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-700"
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
 
         {/* Form tambah dan edit produk */}
