@@ -197,9 +197,13 @@ export default function AdminView() {
     }
 
     if (!response.ok || !result.secure_url) {
-      throw new Error(
-        result.error?.message || 'Gagal mengunggah foto.'
-      );
+  console.error('Detail error Cloudinary:', result);
+
+  throw new Error(
+    `Cloudinary ${response.status}: ${
+      result.error?.message || responseText
+    }`
+  );
     }
 
     return result.secure_url;
