@@ -18,7 +18,7 @@ const rupiah = (value: number) =>
     style: 'currency',
     currency: 'IDR',
     maximumFractionDigits: 0
-  }).format(value);
+  }).format(Number(value) || 0);
 
 type TableQrItem = {
   tableNumber: number;
@@ -38,6 +38,43 @@ type GeneratedQrResponse = {
   error?: string;
 };
 
+type OrderStatus =
+  | 'menunggu'
+  | 'diproses'
+  | 'siap'
+  | 'selesai'
+  | 'dibatalkan';
+
+type AdminOrderItem = {
+  id: string;
+  order_id: string;
+  menu_id: string;
+  item_name: string;
+  item_price: number;
+  quantity: number;
+  subtotal: number;
+};
+
+type AdminOrder = {
+  id: string;
+  order_code: string;
+  customer_name: string;
+  table_number: number;
+  status: OrderStatus;
+  payment_status: 'belum_lunas' | 'lunas';
+  payment_method?: string;
+  total_amount: number;
+  created_at: Date;
+  items: AdminOrderItem[];
+};
+
+type StaffProfile = {
+  id: string;
+  full_name: string;
+  role: string;
+  created_at?: Date | null;
+};
+
 const sectionClass =
   'min-w-0 scroll-mt-5 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm sm:p-5';
 
@@ -46,6 +83,74 @@ const inputClass =
 
 const buttonClass =
   'w-full min-w-0 rounded-xl px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50';
+
+const orderStatusOptions: OrderStatus[] = [
+  'menunggu',
+  'diproses',
+  'siap',
+  'selesai',
+  'dibatalkan'
+];
+
+function toDate(value: any): Date | null {
+  if (!value) return null;
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value?.toDate === 'function') {
+    const result = value.toDate();
+    return result instanceof Date && !Number.isNaN(result.getTime())
+      ? result
+      : null;
+  }
+
+  const result = new Date(value);
+
+  return Number.isNaN(result.getTime()) ? null : result;
+}
+
+function formatDate(value: Date | null | undefined) {
+  if (!value) return '-';
+
+  return new Intl.DateTimeFormat('id-ID', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(value);
+}
+
+function localDateString(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    menunggu: 'Menunggu',
+    diproses: 'Diproses',
+    siap: 'Siap',
+    selesai: 'Selesai',
+    dibatalkan: 'Dibatalkan'
+  };
+
+  return labels[status] || status || 'Tidak diketahui';
+}
+
+function statusClass(status: string) {
+  const classes: Record<string, string> = {
+    menunggu: 'bg-amber-100 text-amber-800',
+    diproses: 'bg-blue-100 text-blue-800',
+    siap: 'bg-indigo-100 text-indigo-800',
+    selesai: 'bg-green-100 text-green-800',
+    dibatalkan: 'bg-red-100 text-red-800'
+  };
+
+  return classes[status] || 'bg-slate-100 text-slate-700';
+}
 
 export default function AdminView() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
@@ -76,6 +181,25 @@ export default function AdminView() {
   const [editingBanner, setEditingBanner] = useState<PromoBanner | null>(null);
   const [bannerError, setBannerError] = useState('');
   const [bannerSaving, setBannerSaving] = useState(false);
+
+  // Data pesanan dan rincian produk.
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [orderItems, setOrderItems] = useState<AdminOrderItem[]>([]);
+  const [orderError, setOrderError] = useState('');
+  const [orderMessage, setOrderMessage] = useState('');
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderFilter, setOrderFilter] = useState('semua');
+  const [paymentMethods, setPaymentMethods] = useState<Record<string, string>>({});
+  const [processingOrderId, setProcessingOrderId] = useState('');
+
+  // Data akun staf.
+  const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
+  const [staffError, setStaffError] = useState('');
+
+  // Filter laporan.
+  const today = localDateString(new Date());
+  const [reportStart, setReportStart] = useState(today);
+  const [reportEnd, setReportEnd] = useState(today);
 
   useEffect(() => {
     return onSnapshot(
@@ -113,6 +237,105 @@ export default function AdminView() {
         );
       }
     );
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'orders'),
+      (snapshot) => {
+        const result = snapshot.docs.map((item) => {
+          const raw = item.data();
+
+          return {
+            id: item.id,
+            order_code: String(raw.order_code ?? ''),
+            customer_name: String(raw.customer_name ?? ''),
+            table_number: Number(raw.table_number ?? 0),
+            status: String(raw.status ?? 'menunggu') as OrderStatus,
+            payment_status:
+              raw.payment_status === 'lunas' ? 'lunas' : 'belum_lunas',
+            payment_method: String(raw.payment_method ?? ''),
+            total_amount: Number(raw.total_amount ?? 0),
+            created_at: toDate(raw.created_at) || new Date(0),
+            items: []
+          } satisfies AdminOrder;
+        });
+
+        result.sort(
+          (a, b) => b.created_at.getTime() - a.created_at.getTime()
+        );
+
+        setOrders(result);
+        setOrderError('');
+      },
+      (err) => {
+        console.error(err);
+        setOrderError('Gagal membaca pesanan. Periksa akses data orders.');
+      }
+    );
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'order_items'),
+      (snapshot) => {
+        setOrderItems(
+          snapshot.docs.map((item) => {
+            const raw = item.data();
+
+            return {
+              id: item.id,
+              order_id: String(raw.order_id ?? ''),
+              menu_id: String(raw.menu_id ?? ''),
+              item_name: String(raw.item_name ?? ''),
+              item_price: Number(raw.item_price ?? 0),
+              quantity: Number(raw.quantity ?? 0),
+              subtotal: Number(raw.subtotal ?? 0)
+            };
+          })
+        );
+      },
+      (err) => {
+        console.error(err);
+        setOrderError(
+          'Gagal membaca rincian pesanan. Periksa akses koleksi order_items.'
+        );
+      }
+    );
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'staff_profiles'),
+      (snapshot) => {
+        setStaffProfiles(
+          snapshot.docs.map((item) => {
+            const raw = item.data();
+
+            return {
+              id: item.id,
+              full_name: String(raw.full_name ?? ''),
+              role: String(raw.role ?? ''),
+              created_at: toDate(raw.created_at)
+            };
+          })
+        );
+
+        setStaffError('');
+      },
+      (err) => {
+        console.error(err);
+        setStaffError(
+          'Daftar akun staf tidak dapat dibaca. Periksa izin akses data staf.'
+        );
+      }
+    );
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -726,20 +949,153 @@ export default function AdminView() {
     }
   };
 
+  // Menggabungkan dokumen orders dengan rincian order_items.
+  const ordersWithItems: AdminOrder[] = orders.map((order) => ({
+    ...order,
+    items: orderItems.filter((item) => item.order_id === order.id)
+  }));
+
+  const filteredOrders = ordersWithItems.filter((order) => {
+    const search = orderSearch.trim().toLowerCase();
+
+    const matchesSearch =
+      !search ||
+      order.order_code.toLowerCase().includes(search) ||
+      order.customer_name.toLowerCase().includes(search) ||
+      String(order.table_number).includes(search);
+
+    const matchesFilter =
+      orderFilter === 'semua' ||
+      (orderFilter === 'belum_lunas' &&
+        order.payment_status === 'belum_lunas') ||
+      (orderFilter === 'lunas' &&
+        order.payment_status === 'lunas') ||
+      order.status === orderFilter;
+
+    return matchesSearch && matchesFilter;
+  });
+
+  const updateOrderStatus = async (
+    order: AdminOrder,
+    nextStatus: OrderStatus
+  ) => {
+    setOrderMessage('');
+    setProcessingOrderId(order.id);
+
+    try {
+      await updateDoc(doc(db, 'orders', order.id), {
+        status: nextStatus
+      });
+
+      setOrderMessage(
+        `Status pesanan ${order.order_code || order.id} berhasil diperbarui.`
+      );
+    } catch (err) {
+      console.error(err);
+      setOrderMessage(
+        'Status pesanan gagal diperbarui. Periksa izin perubahan status pesanan.'
+      );
+    } finally {
+      setProcessingOrderId('');
+    }
+  };
+
+  const recordOrderPayment = async (order: AdminOrder) => {
+    setOrderMessage('');
+    setProcessingOrderId(order.id);
+
+    try {
+      const user = getAuth().currentUser;
+
+      if (!user) {
+        throw new Error('Sesi login tidak ditemukan. Silakan login kembali.');
+      }
+
+      const idToken = await user.getIdToken(true);
+      const paymentMethod = paymentMethods[order.id] || 'tunai';
+
+      const response = await fetch('/api/record-payment', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          order_id: order.id,
+          payment_method: paymentMethod
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.success !== true) {
+        throw new Error(
+          result.error || 'Pembayaran gagal dicatat.'
+        );
+      }
+
+      setOrderMessage(
+        `Pembayaran pesanan ${order.order_code || order.id} berhasil dicatat sebagai LUNAS.`
+      );
+    } catch (err) {
+      console.error(err);
+      setOrderMessage(
+        err instanceof Error
+          ? err.message
+          : 'Pembayaran gagal dicatat.'
+      );
+    } finally {
+      setProcessingOrderId('');
+    }
+  };
+
   const activeBannerCount = banners.filter(
     (banner) => banner.is_active
   ).length;
 
+  // Perhitungan laporan hanya menggunakan pesanan yang terbaca dari Firestore.
+  const reportOrders = ordersWithItems.filter((order) => {
+    const date = localDateString(order.created_at);
+
+    if (reportStart && date < reportStart) return false;
+    if (reportEnd && date > reportEnd) return false;
+
+    return true;
+  });
+
+  const paidOrders = reportOrders.filter(
+    (order) => order.payment_status === 'lunas'
+  );
+
+  const unpaidOrders = reportOrders.filter(
+    (order) => order.payment_status === 'belum_lunas'
+  );
+
+  const paidRevenue = paidOrders.reduce(
+    (total, order) => total + order.total_amount,
+    0
+  );
+
+  const unpaidTotal = unpaidOrders.reduce(
+    (total, order) => total + order.total_amount,
+    0
+  );
+
+  const completedOrders = reportOrders.filter(
+    (order) => order.status === 'selesai'
+  ).length;
+
   const navigation = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊', active: true },
-    { id: 'menu-admin', label: 'Kelola Menu', icon: '🍽️', active: true },
-    { id: 'pesanan-admin', label: 'Kelola Pesanan', icon: '🧾', active: false },
-    { id: 'meja-admin', label: 'Pengaturan Meja', icon: '🪑', active: true },
-    { id: 'qr-admin', label: 'Pengaturan QR', icon: '▦', active: true },
-    { id: 'banner-admin', label: 'Banner Promosi', icon: '🖼️', active: true },
-    { id: 'laporan-admin', label: 'Laporan', icon: '📈', active: false },
-    { id: 'akun-admin', label: 'Akun Kasir', icon: '👥', active: false },
-    { id: 'pengaturan-admin', label: 'Pengaturan', icon: '⚙️', active: false }
+    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
+    { id: 'menu-admin', label: 'Kelola Menu', icon: '🍽️' },
+    { id: 'pesanan-admin', label: 'Kelola Pesanan', icon: '🧾' },
+    { id: 'meja-admin', label: 'Pengaturan Meja', icon: '🪑' },
+    { id: 'qr-admin', label: 'Pengaturan QR', icon: '▦' },
+    { id: 'banner-admin', label: 'Banner Promosi', icon: '🖼️' },
+    { id: 'laporan-admin', label: 'Laporan', icon: '📈' },
+    { id: 'akun-admin', label: 'Akun Kasir', icon: '👥' },
+    { id: 'pengaturan-admin', label: 'Pengaturan', icon: '⚙️' }
   ];
 
   return (
@@ -783,27 +1139,14 @@ export default function AdminView() {
 
             <nav className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
               {navigation.map((item) => (
-                item.active ? (
-                  <a
-                    key={item.id}
-                    href={`#${item.id}`}
-                    className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-3 text-xs font-semibold text-green-50 transition hover:bg-green-800 sm:gap-3 sm:px-3 sm:text-sm"
-                  >
-                    <span className="shrink-0 text-base">{item.icon}</span>
-                    <span className="min-w-0 break-words">{item.label}</span>
-                  </a>
-                ) : (
-                  <div
-                    key={item.id}
-                    aria-disabled="true"
-                    title="Bagian ini belum tersedia"
-                    className="flex min-w-0 cursor-not-allowed items-center gap-2 rounded-xl px-2 py-3 text-xs text-green-200/50 sm:gap-3 sm:px-3 sm:text-sm"
-                  >
-                    <span className="shrink-0 text-base">{item.icon}</span>
-                    <span className="min-w-0 break-words">{item.label}</span>
-                    <span className="hidden shrink-0 text-[10px] sm:inline">Segera</span>
-                  </div>
-                )
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-3 text-xs font-semibold text-green-50 transition hover:bg-green-800 sm:gap-3 sm:px-3 sm:text-sm"
+                >
+                  <span className="shrink-0 text-base">{item.icon}</span>
+                  <span className="min-w-0 break-words">{item.label}</span>
+                </a>
               ))}
             </nav>
 
@@ -815,13 +1158,14 @@ export default function AdminView() {
                 Terhubung ke data
               </p>
               <p className="mt-1 text-xs leading-relaxed text-green-300">
-                Data menu dan banner diperbarui secara langsung.
+                Data menu, banner, pesanan, dan akun staf dibaca dari Firestore.
               </p>
             </div>
           </aside>
 
           <div className="min-w-0 space-y-4 sm:space-y-5">
 
+            {/* DASHBOARD */}
             <section id="dashboard" className="min-w-0 scroll-mt-5">
               <div className="mb-4">
                 <h2 className="break-words text-xl font-extrabold text-slate-900">
@@ -883,6 +1227,23 @@ export default function AdminView() {
                     Banner yang sedang diaktifkan
                   </p>
                 </article>
+
+                <article className="min-w-0 rounded-2xl border border-purple-100 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-500">
+                      Total Pesanan
+                    </p>
+                    <span className="shrink-0 rounded-xl bg-purple-100 p-3 text-xl">
+                      🧾
+                    </span>
+                  </div>
+                  <p className="mt-4 text-3xl font-extrabold text-purple-800">
+                    {orders.length}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pesanan yang tercatat
+                  </p>
+                </article>
               </div>
 
               <div className="mt-4 min-w-0 rounded-2xl border border-green-100 bg-green-50 p-4 sm:mt-5 sm:p-5">
@@ -890,13 +1251,235 @@ export default function AdminView() {
                   Selamat datang di Panel Admin
                 </h3>
                 <p className="mt-2 break-words text-sm leading-relaxed text-green-800">
-                  Gunakan navigasi untuk mengelola menu, meja, QR,
-                  dan banner promosi. Bagian administrasi lainnya
-                  akan disiapkan secara bertahap.
+                  Gunakan navigasi untuk mengelola menu, pesanan, meja,
+                  QR, banner, laporan, akun staf, dan informasi operasional.
                 </p>
               </div>
             </section>
 
+            {/* KELOLA PESANAN */}
+            <section id="pesanan-admin" className={sectionClass}>
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-green-900">
+                    Kelola Pesanan
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Daftar pesanan dan rincian produk diperbarui langsung dari Firestore.
+                  </p>
+                </div>
+                <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
+                  {orders.length} pesanan
+                </span>
+              </div>
+
+              {orderError && (
+                <p className="mt-3 break-words rounded-xl bg-red-50 p-3 text-sm text-red-700">
+                  {orderError}
+                </p>
+              )}
+
+              {orderMessage && (
+                <p className="mt-3 break-words rounded-xl bg-green-50 p-3 text-sm font-semibold text-green-800">
+                  {orderMessage}
+                </p>
+              )}
+
+              <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+                <input
+                  value={orderSearch}
+                  onChange={(event) => setOrderSearch(event.target.value)}
+                  placeholder="Cari kode, nama, atau nomor meja..."
+                  className="min-w-0 rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-green-600"
+                />
+
+                <select
+                  value={orderFilter}
+                  onChange={(event) => setOrderFilter(event.target.value)}
+                  className="min-w-0 rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-green-600"
+                >
+                  <option value="semua">Semua pesanan</option>
+                  <option value="belum_lunas">Belum lunas</option>
+                  <option value="lunas">Sudah lunas</option>
+                  <option value="menunggu">Status menunggu</option>
+                  <option value="diproses">Status diproses</option>
+                  <option value="siap">Status siap</option>
+                  <option value="selesai">Status selesai</option>
+                  <option value="dibatalkan">Status dibatalkan</option>
+                </select>
+              </div>
+
+              {filteredOrders.length === 0 ? (
+                <div className="mt-4 rounded-xl bg-slate-50 p-5 text-center">
+                  <p className="font-semibold text-slate-700">
+                    {orders.length === 0
+                      ? 'Belum ada pesanan.'
+                      : 'Tidak ada pesanan yang cocok dengan pencarian.'}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pesanan baru akan muncul otomatis ketika tersimpan.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-4">
+                  {filteredOrders.map((order) => (
+                    <article
+                      key={order.id}
+                      className="min-w-0 overflow-hidden rounded-xl border border-slate-200"
+                    >
+                      <div className="flex min-w-0 flex-col gap-3 bg-slate-50 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
+                        <div className="min-w-0">
+                          <p className="break-words font-extrabold text-slate-900">
+                            {order.order_code || order.id}
+                          </p>
+                          <p className="mt-1 break-words text-sm text-slate-600">
+                            {order.customer_name || 'Nama pelanggan tidak tersedia'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Meja {String(order.table_number).padStart(2, '0')}
+                            {' · '}
+                            {formatDate(order.created_at)}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusClass(order.status)}`}>
+                            {statusLabel(order.status)}
+                          </span>
+                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            order.payment_status === 'lunas'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="min-w-0 p-3 sm:p-4">
+                        <h3 className="text-sm font-bold text-slate-800">
+                          Rincian Pesanan
+                        </h3>
+
+                        {order.items.length === 0 ? (
+                          <p className="mt-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+                            Rincian produk belum terbaca. Periksa data order_items.
+                          </p>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            {order.items.map((item) => (
+                              <div
+                                key={item.id}
+                                className="flex min-w-0 items-start justify-between gap-3 border-b border-slate-100 pb-2 text-sm last:border-0"
+                              >
+                                <div className="min-w-0">
+                                  <p className="break-words font-semibold text-slate-800">
+                                    {item.item_name}
+                                  </p>
+                                  <p className="text-xs text-slate-500">
+                                    {item.quantity} × {rupiah(item.item_price)}
+                                  </p>
+                                </div>
+                                <p className="shrink-0 text-right font-semibold text-slate-800">
+                                  {rupiah(item.subtotal)}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-green-50 p-3">
+                          <span className="text-sm font-bold text-green-900">
+                            Total Pesanan
+                          </span>
+                          <span className="text-base font-extrabold text-green-900">
+                            {rupiah(order.total_amount)}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="min-w-0">
+                            <label className="mb-1 block text-xs font-bold text-slate-600">
+                              Status Pesanan
+                            </label>
+                            <select
+                              value={order.status}
+                              disabled={processingOrderId === order.id}
+                              onChange={(event) =>
+                                updateOrderStatus(
+                                  order,
+                                  event.target.value as OrderStatus
+                                )
+                              }
+                              className="w-full min-w-0 rounded-lg border border-slate-200 p-3 text-sm"
+                            >
+                              {orderStatusOptions.map((status) => (
+                                <option key={status} value={status}>
+                                  {statusLabel(status)}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="min-w-0">
+                            <label className="mb-1 block text-xs font-bold text-slate-600">
+                              Metode Pembayaran
+                            </label>
+                            {order.payment_status === 'lunas' ? (
+                              <div className="rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-800">
+                                {order.payment_method === 'non_tunai'
+                                  ? 'Non-Tunai'
+                                  : order.payment_method === 'tunai'
+                                    ? 'Tunai'
+                                    : 'Sudah dibayar'}
+                              </div>
+                            ) : (
+                              <select
+                                value={paymentMethods[order.id] || 'tunai'}
+                                onChange={(event) =>
+                                  setPaymentMethods((current) => ({
+                                    ...current,
+                                    [order.id]: event.target.value
+                                  }))
+                                }
+                                className="w-full min-w-0 rounded-lg border border-slate-200 p-3 text-sm"
+                              >
+                                <option value="tunai">Tunai</option>
+                                <option value="non_tunai">Non-Tunai</option>
+                              </select>
+                            )}
+                          </div>
+                        </div>
+
+                        {order.payment_status !== 'lunas' && (
+                          <button
+                            type="button"
+                            disabled={
+                              processingOrderId === order.id ||
+                              order.status === 'dibatalkan'
+                            }
+                            onClick={() => recordOrderPayment(order)}
+                            className={`${buttonClass} mt-3 bg-green-800 text-white hover:bg-green-900`}
+                          >
+                            {processingOrderId === order.id
+                              ? 'Memproses...'
+                              : 'Catat Pembayaran / LUNAS'}
+                          </button>
+                        )}
+
+                        {order.payment_status === 'lunas' && (
+                          <p className="mt-3 rounded-lg bg-green-50 p-3 text-center text-sm font-bold text-green-800">
+                            Pembayaran telah tercatat lunas.
+                          </p>
+                        )}
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* PENGATURAN MEJA */}
             <section id="meja-admin" className={sectionClass}>
               <h2 className="break-words font-bold text-green-900">
                 Pengaturan Meja Restoran
@@ -922,6 +1505,7 @@ export default function AdminView() {
               )}
             </section>
 
+            {/* PENGATURAN QR */}
             <section id="qr-admin" className={sectionClass}>
               <h2 className="break-words text-lg font-bold text-green-900">
                 Pengelolaan QR Meja
@@ -991,6 +1575,7 @@ export default function AdminView() {
               )}
             </section>
 
+            {/* BANNER PROMOSI */}
             <section id="banner-admin" className={sectionClass}>
               <h2 className="break-words text-lg font-bold text-green-900">
                 Pengelolaan Banner Promosi
@@ -1183,6 +1768,264 @@ export default function AdminView() {
               </div>
             </section>
 
+            {/* LAPORAN */}
+            <section id="laporan-admin" className={sectionClass}>
+              <h2 className="text-lg font-bold text-green-900">
+                Laporan Penjualan
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Perhitungan berdasarkan tanggal pesanan dan status pembayaran yang tercatat.
+              </p>
+
+              <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-bold text-slate-600">
+                    Dari tanggal
+                  </label>
+                  <input
+                    type="date"
+                    value={reportStart}
+                    onChange={(event) => setReportStart(event.target.value)}
+                    className="w-full min-w-0 rounded-xl border border-slate-200 p-3 text-sm"
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label className="mb-1 block text-xs font-bold text-slate-600">
+                    Sampai tanggal
+                  </label>
+                  <input
+                    type="date"
+                    value={reportEnd}
+                    min={reportStart || undefined}
+                    onChange={(event) => setReportEnd(event.target.value)}
+                    className="w-full min-w-0 rounded-xl border border-slate-200 p-3 text-sm"
+                  />
+                </div>
+              </div>
+
+              {reportStart && reportEnd && reportStart > reportEnd && (
+                <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                  Tanggal awal tidak boleh melewati tanggal akhir.
+                </p>
+              )}
+
+              <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <article className="rounded-xl border border-green-100 bg-green-50 p-4">
+                  <p className="text-sm font-semibold text-green-800">
+                    Omzet Pembayaran Lunas
+                  </p>
+                  <p className="mt-2 break-words text-xl font-extrabold text-green-900">
+                    {rupiah(paidRevenue)}
+                  </p>
+                </article>
+
+                <article className="rounded-xl border border-amber-100 bg-amber-50 p-4">
+                  <p className="text-sm font-semibold text-amber-800">
+                    Total Belum Lunas
+                  </p>
+                  <p className="mt-2 break-words text-xl font-extrabold text-amber-900">
+                    {rupiah(unpaidTotal)}
+                  </p>
+                </article>
+
+                <article className="rounded-xl border border-blue-100 bg-blue-50 p-4">
+                  <p className="text-sm font-semibold text-blue-800">
+                    Jumlah Pesanan
+                  </p>
+                  <p className="mt-2 text-2xl font-extrabold text-blue-900">
+                    {reportStart && reportEnd && reportStart > reportEnd
+                      ? 0
+                      : reportOrders.length}
+                  </p>
+                </article>
+
+                <article className="rounded-xl border border-purple-100 bg-purple-50 p-4">
+                  <p className="text-sm font-semibold text-purple-800">
+                    Pesanan Selesai
+                  </p>
+                  <p className="mt-2 text-2xl font-extrabold text-purple-900">
+                    {reportStart && reportEnd && reportStart > reportEnd
+                      ? 0
+                      : completedOrders}
+                  </p>
+                </article>
+              </div>
+
+              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+                <div className="bg-slate-50 p-3">
+                  <h3 className="font-bold text-slate-800">
+                    Rincian Pembayaran
+                  </h3>
+                </div>
+                <div className="divide-y divide-slate-100 p-3 text-sm">
+                  <div className="flex justify-between gap-3 py-2">
+                    <span className="text-slate-600">Pesanan lunas</span>
+                    <strong>{paidOrders.length}</strong>
+                  </div>
+                  <div className="flex justify-between gap-3 py-2">
+                    <span className="text-slate-600">Pesanan belum lunas</span>
+                    <strong>{unpaidOrders.length}</strong>
+                  </div>
+                  <div className="flex justify-between gap-3 py-2">
+                    <span className="text-slate-600">Pesanan dibatalkan</span>
+                    <strong>
+                      {reportOrders.filter((order) => order.status === 'dibatalkan').length}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                Catatan: omzet dihitung dari pesanan berstatus lunas.
+                Pesanan yang belum lunas tidak dimasukkan ke omzet.
+              </p>
+            </section>
+
+            {/* AKUN KASIR */}
+            <section id="akun-admin" className={sectionClass}>
+              <h2 className="text-lg font-bold text-green-900">
+                Akun Staf dan Kasir
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                Daftar akun dibaca dari koleksi staff_profiles.
+              </p>
+
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-bold text-amber-900">
+                  Pengelolaan akun baru belum diaktifkan.
+                </p>
+                <p className="mt-1 text-xs leading-relaxed text-amber-800">
+                  Pembuatan dan persetujuan akun Kasir harus dilakukan melalui
+                  backend tepercaya oleh Admin. Halaman ini hanya menampilkan
+                  data akun yang sudah terdaftar.
+                </p>
+              </div>
+
+              {staffError && (
+                <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                  {staffError}
+                </p>
+              )}
+
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <h3 className="font-bold text-slate-800">
+                  Daftar Akun
+                </h3>
+                <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
+                  {staffProfiles.length} akun
+                </span>
+              </div>
+
+              {staffProfiles.length === 0 ? (
+                <p className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                  Belum ada data akun yang dapat ditampilkan.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {staffProfiles.map((staff) => {
+                    const role = staff.role.trim().toLowerCase();
+                    const isCashier = role === 'kasir';
+
+                    return (
+                      <article
+                        key={staff.id}
+                        className="flex min-w-0 flex-col gap-2 rounded-xl border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="break-words font-bold text-slate-900">
+                            {staff.full_name || 'Nama belum diatur'}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {staff.created_at
+                              ? `Terdaftar: ${formatDate(staff.created_at)}`
+                              : 'Tanggal pendaftaran tidak tersedia'}
+                          </p>
+                        </div>
+
+                        <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${
+                          isCashier
+                            ? 'bg-blue-100 text-blue-800'
+                            : 'bg-green-100 text-green-800'
+                        }`}>
+                          {staff.role || 'Role belum diatur'}
+                        </span>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {/* PENGATURAN */}
+            <section id="pengaturan-admin" className={sectionClass}>
+              <h2 className="text-lg font-bold text-green-900">
+                Pengaturan Restoran
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Informasi operasional yang digunakan oleh Website WAROENG BPJS.
+              </p>
+
+              <div className="mt-4 space-y-3">
+                <div className="rounded-xl border border-slate-200 p-3">
+                  <p className="text-xs font-semibold text-slate-500">
+                    Nama usaha
+                  </p>
+                  <p className="mt-1 font-bold text-slate-900">
+                    WAROENG BPJS
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-3">
+                  <p className="text-xs font-semibold text-slate-500">
+                    Alamat usaha
+                  </p>
+                  <p className="mt-1 break-words text-sm font-semibold leading-relaxed text-slate-900">
+                    Jl. Kandang Sapi 001/002 No. 01 Desa Tanjungsari
+                    Kecamatan Sukaluyu Kabupaten Cianjur
+                  </p>
+                </div>
+
+                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <p className="text-xs font-semibold text-slate-500">
+                      Jumlah meja
+                    </p>
+                    <p className="mt-1 text-xl font-extrabold text-green-800">
+                      50 meja
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Nomor meja 01 sampai 50
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 p-3">
+                    <p className="text-xs font-semibold text-slate-500">
+                      Sistem pembayaran
+                    </p>
+                    <p className="mt-1 font-bold text-slate-900">
+                      Tunai dan Non-Tunai
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Pembayaran dicatat oleh petugas
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
+                  <p className="text-sm font-bold text-blue-900">
+                    Pengaturan penyimpanan belum tersedia
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-blue-800">
+                    Bagian ini saat ini menampilkan informasi operasional.
+                    Belum ada perubahan yang disimpan ke database karena
+                    struktur koleksi pengaturan restoran belum tersedia.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* KELOLA MENU */}
             <section id="menu-admin" className={sectionClass}>
               <h2 className="mb-4 break-words text-lg font-bold text-green-900">
                 {editingMenu ? 'Edit Produk' : 'Tambah Menu'}
@@ -1287,6 +2130,7 @@ export default function AdminView() {
               )}
             </section>
 
+            {/* DAFTAR MENU */}
             <section id="daftar-menu-admin" className={sectionClass}>
               <h2 className="mb-4 break-words text-lg font-bold text-green-900">
                 Daftar Produk ({menus.length})
