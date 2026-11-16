@@ -49,16 +49,16 @@ export default function CustomerForm({
   };
 
   return (
-    <section className="rounded-2xl bg-white p-4 shadow-sm">
-      <h2 className="mb-4 text-lg font-bold">
+    <section className="px-1 py-1">
+      <h2 className="mb-3 text-base font-extrabold text-gray-900">
         Data Pemesan
       </h2>
 
-      <label className="mb-2 block text-sm font-semibold">
+      <label className="mb-1.5 block text-sm font-semibold">
         Nomor Meja
       </label>
 
-      <div className="mb-4 rounded-xl border bg-gray-50 p-3">
+      <div className="mb-3 rounded-lg border border-gray-200 bg-white/70 px-3 py-2">
         {validTable ? (
           <span className="font-bold text-green-800">
             Meja {String(tableNumber).padStart(2, '0')}
@@ -71,7 +71,7 @@ export default function CustomerForm({
         )}
       </div>
 
-      <label className="mb-2 block text-sm font-semibold">
+      <label className="mb-1.5 block text-sm font-semibold">
         Nama Pemesan *
       </label>
 
@@ -81,13 +81,13 @@ export default function CustomerForm({
         onChange={(e) => setName(e.target.value)}
         placeholder="Masukkan nama pemesan"
         maxLength={80}
-        className="w-full rounded-xl border p-3"
+        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-green-700 focus:ring-2 focus:ring-green-100"
       />
 
       <button
         onClick={handleSubmit}
         disabled={!canSubmit}
-        className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
+        className="mt-3 w-full rounded-lg bg-green-800 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
       >
         Lanjutkan Pesanan
       </button>
