@@ -35,91 +35,90 @@ export default function Cart({
   );
 
   return (
-    <section className="fixed bottom-0 left-0 right-0 z-20 max-h-[38dvh] border-t border-green-100 bg-white/95 shadow-[0_-5px_24px_rgba(0,0,0,0.10)] backdrop-blur-sm">
-      <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-col px-4 pb-3 pt-3 sm:px-6 sm:pb-4">
+    <section className="fixed inset-x-0 bottom-0 z-30 flex h-[30dvh] min-h-[150px] max-h-[230px] flex-col border-t border-green-100 bg-white px-3 pb-[max(6px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-5px_20px_rgba(0,0,0,0.08)] sm:px-5">
 
-        <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-extrabold text-green-900 sm:text-base">
+      <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+
+        <div className="mb-1 flex shrink-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <h2 className="text-sm font-extrabold text-green-900">
               Keranjang Pesanan
             </h2>
 
-            <p className="mt-0.5 text-[11px] text-gray-500 sm:text-xs">
-              {totalQuantity} item · {items.length} jenis menu
-            </p>
+            <span className="rounded-full bg-green-50 px-2 py-0.5 text-[10px] font-bold text-green-800">
+              {totalQuantity} item
+            </span>
           </div>
 
-          <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
-            {items.length} Menu
+          <span className="shrink-0 text-[10px] text-gray-500">
+            {items.length} jenis menu
           </span>
         </div>
 
-        {items.length === 0 ? (
-          <div className="shrink-0 rounded-xl bg-gray-50 px-3 py-3 text-center">
-            <p className="text-sm font-medium text-gray-500">
-              Keranjang masih kosong.
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+          {items.length === 0 ? (
+            <p className="py-2 text-xs text-gray-500">
+              Belum ada pesanan.
             </p>
-            <p className="mt-1 text-xs text-gray-400">
-              Pilih menu favorit untuk mulai memesan.
-            </p>
-          </div>
-        ) : (
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain pr-1">
-            {items.map((item) => (
-              <div
-                key={item.menu.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-3 py-2"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold text-gray-800">
-                    {item.menu.name}
-                  </p>
+          ) : (
+            <div className="space-y-1">
+              {items.map((item) => (
+                <div
+                  key={item.menu.id}
+                  className="flex min-h-9 items-center justify-between gap-2 border-b border-gray-100 py-1"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-bold text-gray-800">
+                      {item.menu.name}
+                    </p>
 
-                  <p className="mt-0.5 text-xs text-gray-500">
-                    {rupiah(item.menu.price)} × {item.quantity}
-                  </p>
+                    <p className="text-[10px] text-gray-500">
+                      {rupiah(item.menu.price)} × {item.quantity}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      aria-label={`Kurangi ${item.menu.name}`}
+                      onClick={() => onRemove(item.menu.id)}
+                      className="grid h-7 w-7 place-items-center rounded-full bg-gray-100 text-sm font-bold text-gray-700"
+                    >
+                      −
+                    </button>
+
+                    <span className="min-w-3 text-center text-xs font-bold">
+                      {item.quantity}
+                    </span>
+
+                    <button
+                      type="button"
+                      aria-label={`Tambah ${item.menu.name}`}
+                      onClick={() => onAdd(item.menu)}
+                      className="grid h-7 w-7 place-items-center rounded-full bg-green-800 text-sm font-bold text-white"
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-                <div className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onRemove(item.menu.id)}
-                    aria-label={`Kurangi ${item.menu.name}`}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-gray-50 text-lg font-bold text-gray-700 transition hover:bg-gray-100 active:scale-95"
-                  >
-                    −
-                  </button>
-
-                  <span className="min-w-5 text-center text-sm font-extrabold text-gray-800">
-                    {item.quantity}
-                  </span>
-
-                  <button
-                    type="button"
-                    onClick={() => onAdd(item.menu)}
-                    aria-label={`Tambah ${item.menu.name}`}
-                    className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-800 text-lg font-bold text-white transition hover:bg-green-900 active:scale-95"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="mt-3 flex shrink-0 items-center justify-between gap-3 border-t border-green-100 pt-3">
-          <div>
-            <p className="text-xs font-medium text-gray-500">
+        <div className="mt-1 flex shrink-0 items-center justify-between gap-3 border-t border-green-100 bg-white pt-2">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-gray-700">
               Total Pembayaran
             </p>
-            <p className="mt-0.5 text-lg font-extrabold text-green-900 sm:text-xl">
-              {rupiah(total)}
+
+            <p className="text-[9px] text-gray-500">
+              Bayar di kasir
             </p>
           </div>
 
-          <span className="rounded-xl bg-green-50 px-3 py-2 text-xs font-bold text-green-800 sm:text-sm">
-            Pembayaran di Kasir
+          <span className="shrink-0 text-base font-extrabold text-green-800 sm:text-lg">
+            {rupiah(total)}
           </span>
         </div>
 
