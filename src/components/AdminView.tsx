@@ -38,6 +38,15 @@ type GeneratedQrResponse = {
   error?: string;
 };
 
+const sectionClass =
+  'min-w-0 scroll-mt-5 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm sm:p-5';
+
+const inputClass =
+  'mb-3 block min-w-0 w-full max-w-full rounded-xl border border-slate-200 p-3 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-100';
+
+const buttonClass =
+  'w-full min-w-0 rounded-xl px-4 py-3 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50';
+
 export default function AdminView() {
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [name, setName] = useState('');
@@ -734,15 +743,15 @@ export default function AdminView() {
   ];
 
   return (
-    <main className="min-h-screen bg-slate-50 p-3 sm:p-5">
-      <div className="mx-auto max-w-[1600px]">
+    <main className="min-h-screen w-full min-w-0 overflow-x-clip bg-slate-50 p-2 sm:p-4 lg:p-5">
+      <div className="mx-auto w-full min-w-0 max-w-[1600px]">
 
-        <header className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-5">
-          <div>
+        <header className="mb-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm sm:mb-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5">
+          <div className="min-w-0">
             <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-green-700">
               WAROENG BPJS
             </p>
-            <h1 className="mt-1 text-xl font-extrabold text-slate-900 sm:text-2xl">
+            <h1 className="mt-1 break-words text-xl font-extrabold text-slate-900 sm:text-2xl">
               Dashboard Admin
             </h1>
             <p className="mt-1 text-sm text-slate-500">
@@ -750,12 +759,12 @@ export default function AdminView() {
             </p>
           </div>
 
-          <div className="flex items-center gap-3 rounded-xl bg-green-50 px-4 py-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-800 text-lg font-bold text-white">
+          <div className="flex min-w-0 items-center gap-3 rounded-xl bg-green-50 px-3 py-3 sm:px-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-800 text-lg font-bold text-white">
               A
             </div>
-            <div>
-              <p className="text-sm font-bold text-green-900">
+            <div className="min-w-0">
+              <p className="break-words text-sm font-bold text-green-900">
                 Administrator
               </p>
               <p className="text-xs text-green-700">
@@ -765,34 +774,34 @@ export default function AdminView() {
           </div>
         </header>
 
-        <div className="grid min-w-0 gap-5 lg:grid-cols-[245px_minmax(0,1fr)]">
+        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-5">
 
-          <aside className="h-fit rounded-2xl bg-green-950 p-4 text-white shadow-sm lg:sticky lg:top-4">
-            <p className="mb-3 px-3 text-xs font-bold uppercase tracking-widest text-green-300">
+          <aside className="h-fit min-w-0 rounded-2xl bg-green-950 p-3 text-white shadow-sm sm:p-4 lg:sticky lg:top-4">
+            <p className="mb-3 px-1 text-xs font-bold uppercase tracking-widest text-green-300 sm:px-3">
               Menu Utama
             </p>
 
-            <nav className="flex gap-2 overflow-x-auto pb-1 lg:flex-col">
+            <nav className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
               {navigation.map((item) => (
                 item.active ? (
                   <a
                     key={item.id}
                     href={`#${item.id}`}
-                    className="flex shrink-0 items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-green-50 transition hover:bg-green-800"
+                    className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-3 text-xs font-semibold text-green-50 transition hover:bg-green-800 sm:gap-3 sm:px-3 sm:text-sm"
                   >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
+                    <span className="shrink-0 text-base">{item.icon}</span>
+                    <span className="min-w-0 break-words">{item.label}</span>
                   </a>
                 ) : (
                   <div
                     key={item.id}
                     aria-disabled="true"
                     title="Bagian ini belum tersedia"
-                    className="flex shrink-0 cursor-not-allowed items-center gap-3 rounded-xl px-3 py-3 text-sm text-green-200/50"
+                    className="flex min-w-0 cursor-not-allowed items-center gap-2 rounded-xl px-2 py-3 text-xs text-green-200/50 sm:gap-3 sm:px-3 sm:text-sm"
                   >
-                    <span>{item.icon}</span>
-                    <span>{item.label}</span>
-                    <span className="ml-auto text-[10px]">Segera</span>
+                    <span className="shrink-0 text-base">{item.icon}</span>
+                    <span className="min-w-0 break-words">{item.label}</span>
+                    <span className="hidden shrink-0 text-[10px] sm:inline">Segera</span>
                   </div>
                 )
               ))}
@@ -805,17 +814,17 @@ export default function AdminView() {
               <p className="mt-1 text-sm font-bold text-white">
                 Terhubung ke data
               </p>
-              <p className="mt-1 text-xs text-green-300">
+              <p className="mt-1 text-xs leading-relaxed text-green-300">
                 Data menu dan banner diperbarui secara langsung.
               </p>
             </div>
           </aside>
 
-          <div className="min-w-0 space-y-5">
+          <div className="min-w-0 space-y-4 sm:space-y-5">
 
-            <section id="dashboard" className="scroll-mt-5">
+            <section id="dashboard" className="min-w-0 scroll-mt-5">
               <div className="mb-4">
-                <h2 className="text-xl font-extrabold text-slate-900">
+                <h2 className="break-words text-xl font-extrabold text-slate-900">
                   Ringkasan Dashboard
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
@@ -823,13 +832,13 @@ export default function AdminView() {
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                <article className="rounded-2xl border border-green-100 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between">
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 sm:gap-4">
+                <article className="min-w-0 rounded-2xl border border-green-100 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-slate-500">
                       Total Menu
                     </p>
-                    <span className="rounded-xl bg-green-100 p-3 text-xl">
+                    <span className="shrink-0 rounded-xl bg-green-100 p-3 text-xl">
                       🍽️
                     </span>
                   </div>
@@ -841,12 +850,12 @@ export default function AdminView() {
                   </p>
                 </article>
 
-                <article className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between">
+                <article className="min-w-0 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-slate-500">
                       Banner Promosi
                     </p>
-                    <span className="rounded-xl bg-blue-100 p-3 text-xl">
+                    <span className="shrink-0 rounded-xl bg-blue-100 p-3 text-xl">
                       🖼️
                     </span>
                   </div>
@@ -858,12 +867,12 @@ export default function AdminView() {
                   </p>
                 </article>
 
-                <article className="rounded-2xl border border-amber-100 bg-white p-5 shadow-sm">
-                  <div className="flex items-center justify-between">
+                <article className="min-w-0 rounded-2xl border border-amber-100 bg-white p-4 shadow-sm sm:p-5">
+                  <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-semibold text-slate-500">
                       Banner Aktif
                     </p>
-                    <span className="rounded-xl bg-amber-100 p-3 text-xl">
+                    <span className="shrink-0 rounded-xl bg-amber-100 p-3 text-xl">
                       📢
                     </span>
                   </div>
@@ -876,11 +885,11 @@ export default function AdminView() {
                 </article>
               </div>
 
-              <div className="mt-5 rounded-2xl border border-green-100 bg-green-50 p-5">
+              <div className="mt-4 min-w-0 rounded-2xl border border-green-100 bg-green-50 p-4 sm:mt-5 sm:p-5">
                 <h3 className="font-bold text-green-900">
                   Selamat datang di Panel Admin
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-green-800">
+                <p className="mt-2 break-words text-sm leading-relaxed text-green-800">
                   Gunakan navigasi untuk mengelola menu, meja, QR,
                   dan banner promosi. Bagian administrasi lainnya
                   akan disiapkan secara bertahap.
@@ -888,15 +897,12 @@ export default function AdminView() {
               </div>
             </section>
 
-            <section
-              id="meja-admin"
-              className="scroll-mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
-            >
-              <h2 className="font-bold text-green-900">
+            <section id="meja-admin" className={sectionClass}>
+              <h2 className="break-words font-bold text-green-900">
                 Pengaturan Meja Restoran
               </h2>
 
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">
                 Siapkan nomor meja 01 sampai 50 secara otomatis.
               </p>
 
@@ -904,27 +910,24 @@ export default function AdminView() {
                 type="button"
                 onClick={seedRestaurantTables}
                 disabled={seedingTables}
-                className="mt-3 w-full rounded-xl bg-green-800 py-3 font-bold text-white transition hover:bg-green-900 disabled:opacity-50"
+                className={`${buttonClass} mt-3 bg-green-800 text-white hover:bg-green-900`}
               >
                 {seedingTables ? 'Menyiapkan Meja...' : 'Siapkan 50 Meja'}
               </button>
 
               {seedMessage && (
-                <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">
+                <p className="mt-3 break-words rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">
                   {seedMessage}
                 </p>
               )}
             </section>
 
-            <section
-              id="qr-admin"
-              className="scroll-mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
-            >
-              <h2 className="text-lg font-bold text-green-900">
+            <section id="qr-admin" className={sectionClass}>
+              <h2 className="break-words text-lg font-bold text-green-900">
                 Pengelolaan QR Meja
               </h2>
 
-              <p className="mt-2 text-sm text-slate-600">
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
                 Buat atau pulihkan 50 QR unik untuk meja 01 sampai 50.
                 QR yang sudah tersedia tidak akan diganti.
               </p>
@@ -933,20 +936,20 @@ export default function AdminView() {
                 type="button"
                 onClick={generateTableQrs}
                 disabled={qrLoading}
-                className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white transition hover:bg-green-900 disabled:opacity-50"
+                className={`${buttonClass} mt-4 bg-green-800 text-white hover:bg-green-900`}
               >
                 {qrLoading ? 'Memproses 50 QR...' : 'Buat / Pulihkan 50 QR'}
               </button>
 
               {qrMessage && (
-                <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">
+                <p className="mt-3 break-words rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">
                   {qrMessage}
                 </p>
               )}
 
               {qrItems.length === 50 && (
                 <>
-                  <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm text-green-900">
+                  <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm leading-relaxed text-green-900">
                     <p className="font-bold">
                       50 QR berhasil disiapkan.
                     </p>
@@ -959,26 +962,26 @@ export default function AdminView() {
                   <button
                     type="button"
                     onClick={printTableQrs}
-                    className="mt-4 w-full rounded-xl bg-blue-700 py-3 font-bold text-white hover:bg-blue-800"
+                    className={`${buttonClass} mt-4 bg-blue-700 text-white hover:bg-blue-800`}
                   >
                     Cetak 50 QR Meja
                   </button>
 
-                  <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  <div className="mt-5 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-5">
                     {qrItems.map((item) => (
                       <div
                         key={item.tableNumber}
-                        className="rounded-xl border p-3 text-center"
+                        className="min-w-0 rounded-xl border p-2 text-center sm:p-3"
                       >
-                        <p className="font-extrabold text-green-900">
+                        <p className="break-words text-sm font-extrabold text-green-900">
                           {item.tableName}
                         </p>
                         <img
                           src={item.imageUrl}
                           alt={`QR ${item.tableName}`}
-                          className="mx-auto mt-2 w-full"
+                          className="mx-auto mt-2 block w-full max-w-full"
                         />
-                        <p className="mt-2 text-xs text-slate-500">
+                        <p className="mt-2 break-words text-xs text-slate-500">
                           Scan untuk memesan
                         </p>
                       </div>
@@ -988,21 +991,18 @@ export default function AdminView() {
               )}
             </section>
 
-            <section
-              id="banner-admin"
-              className="scroll-mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
-            >
-              <h2 className="text-lg font-bold text-green-900">
+            <section id="banner-admin" className={sectionClass}>
+              <h2 className="break-words text-lg font-bold text-green-900">
                 Pengelolaan Banner Promosi
               </h2>
 
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm leading-relaxed text-slate-600">
                 Tambahkan promosi yang akan ditampilkan pada halaman pelanggan.
                 Banner dapat diaktifkan atau dinonaktifkan kapan saja.
               </p>
 
-              <div className="mt-4 rounded-xl border border-slate-200 p-4">
-                <h3 className="mb-3 font-bold text-slate-800">
+              <div className="mt-4 min-w-0 rounded-xl border border-slate-200 p-3 sm:p-4">
+                <h3 className="mb-3 break-words font-bold text-slate-800">
                   {editingBanner ? 'Edit Banner' : 'Tambah Banner Baru'}
                 </h3>
 
@@ -1014,7 +1014,7 @@ export default function AdminView() {
                   onChange={(e) => setBannerTitle(e.target.value)}
                   maxLength={100}
                   placeholder="Contoh: Promo Hemat Hari Ini"
-                  className="mb-3 w-full rounded-xl border border-slate-200 p-3"
+                  className={inputClass}
                 />
 
                 <label className="mb-2 block text-sm font-semibold">
@@ -1025,11 +1025,11 @@ export default function AdminView() {
                   onChange={(e) => setBannerDescription(e.target.value)}
                   maxLength={300}
                   placeholder="Tuliskan informasi promosi..."
-                  className="mb-3 w-full rounded-xl border border-slate-200 p-3"
+                  className={inputClass}
                   rows={3}
                 />
 
-                <div className="mb-3 rounded-xl border border-dashed border-slate-300 p-4">
+                <div className="mb-3 min-w-0 rounded-xl border border-dashed border-slate-300 p-3 sm:p-4">
                   <label className="mb-2 block font-bold">
                     Foto Banner *
                   </label>
@@ -1037,18 +1037,18 @@ export default function AdminView() {
                     type="file"
                     accept="image/*"
                     onChange={handleBannerPhotoChange}
-                    className="w-full text-sm"
+                    className="block w-full min-w-0 max-w-full text-sm"
                   />
 
                   {(bannerPreviewUrl || bannerExistingImageUrl) && (
-                    <div className="mt-3">
+                    <div className="mt-3 min-w-0">
                       <p className="mb-2 text-sm text-slate-500">
                         Pratinjau banner:
                       </p>
                       <img
                         src={bannerPreviewUrl || bannerExistingImageUrl}
                         alt="Pratinjau banner"
-                        className="max-h-56 w-full rounded-xl object-cover"
+                        className="max-h-56 w-full max-w-full rounded-xl object-cover"
                       />
                       <button
                         type="button"
@@ -1064,20 +1064,20 @@ export default function AdminView() {
                   )}
                 </div>
 
-                <label className="flex items-center gap-3 rounded-xl bg-green-50 p-3">
+                <label className="flex min-w-0 items-start gap-3 rounded-xl bg-green-50 p-3">
                   <input
                     type="checkbox"
                     checked={bannerActive}
                     onChange={(e) => setBannerActive(e.target.checked)}
-                    className="h-5 w-5 accent-green-800"
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-green-800"
                   />
-                  <span className="text-sm font-semibold text-green-900">
+                  <span className="min-w-0 break-words text-sm font-semibold text-green-900">
                     Aktifkan banner setelah disimpan
                   </span>
                 </label>
 
                 {bannerError && (
-                  <p className="mt-3 rounded-lg bg-red-100 p-3 text-sm text-red-800">
+                  <p className="mt-3 break-words rounded-lg bg-red-100 p-3 text-sm text-red-800">
                     {bannerError}
                   </p>
                 )}
@@ -1086,7 +1086,7 @@ export default function AdminView() {
                   type="button"
                   onClick={saveBanner}
                   disabled={bannerSaving}
-                  className="mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white hover:bg-green-900 disabled:opacity-50"
+                  className={`${buttonClass} mt-4 bg-green-800 text-white hover:bg-green-900`}
                 >
                   {bannerSaving
                     ? 'Menyimpan Banner...'
@@ -1099,15 +1099,15 @@ export default function AdminView() {
                   <button
                     type="button"
                     onClick={cancelBannerEdit}
-                    className="mt-2 w-full rounded-xl bg-slate-200 py-3 font-bold text-slate-700"
+                    className={`${buttonClass} mt-2 bg-slate-200 text-slate-700`}
                   >
                     Batal Edit Banner
                   </button>
                 )}
               </div>
 
-              <div className="mt-5">
-                <h3 className="mb-3 font-bold text-slate-800">
+              <div className="mt-5 min-w-0">
+                <h3 className="mb-3 break-words font-bold text-slate-800">
                   Daftar Banner ({banners.length})
                 </h3>
 
@@ -1116,27 +1116,27 @@ export default function AdminView() {
                     Belum ada banner promosi.
                   </p>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="min-w-0 space-y-4">
                     {banners.map((banner) => (
                       <article
                         key={banner.id}
-                        className="overflow-hidden rounded-xl border border-slate-200"
+                        className="min-w-0 overflow-hidden rounded-xl border border-slate-200"
                       >
                         {banner.image_url && (
                           <img
                             src={banner.image_url}
                             alt={banner.title}
-                            className="max-h-52 w-full object-cover"
+                            className="max-h-52 w-full max-w-full object-cover"
                           />
                         )}
 
-                        <div className="p-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <h4 className="font-bold text-slate-900">
+                        <div className="min-w-0 p-3 sm:p-4">
+                          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                            <h4 className="min-w-0 break-words font-bold text-slate-900">
                               {banner.title}
                             </h4>
                             <span
-                              className={`rounded-full px-3 py-1 text-xs font-bold ${
+                              className={`shrink-0 rounded-full px-3 py-1 text-xs font-bold ${
                                 banner.is_active
                                   ? 'bg-green-100 text-green-800'
                                   : 'bg-slate-200 text-slate-600'
@@ -1147,30 +1147,30 @@ export default function AdminView() {
                           </div>
 
                           {banner.description && (
-                            <p className="mt-2 text-sm text-slate-600">
+                            <p className="mt-2 break-words text-sm text-slate-600">
                               {banner.description}
                             </p>
                           )}
 
-                          <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                          <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-3">
                             <button
                               type="button"
                               onClick={() => startEditBanner(banner)}
-                              className="rounded-lg bg-blue-100 px-3 py-2 text-sm font-semibold text-blue-800"
+                              className="min-w-0 rounded-lg bg-blue-100 px-3 py-2 text-sm font-semibold text-blue-800"
                             >
                               Edit
                             </button>
                             <button
                               type="button"
                               onClick={() => toggleBannerStatus(banner)}
-                              className="rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800"
+                              className="min-w-0 rounded-lg bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-800"
                             >
                               {banner.is_active ? 'Nonaktifkan' : 'Aktifkan'}
                             </button>
                             <button
                               type="button"
                               onClick={() => removeBanner(banner)}
-                              className="rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-700"
+                              className="min-w-0 rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-700"
                             >
                               Hapus
                             </button>
@@ -1183,11 +1183,8 @@ export default function AdminView() {
               </div>
             </section>
 
-            <section
-              id="menu-admin"
-              className="scroll-mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
-            >
-              <h2 className="mb-4 text-lg font-bold text-green-900">
+            <section id="menu-admin" className={sectionClass}>
+              <h2 className="mb-4 break-words text-lg font-bold text-green-900">
                 {editingMenu ? 'Edit Produk' : 'Tambah Menu'}
               </h2>
 
@@ -1195,13 +1192,13 @@ export default function AdminView() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Nama produk"
-                className="mb-3 w-full rounded-xl border border-slate-200 p-3"
+                className={inputClass}
               />
 
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="mb-3 w-full rounded-xl border border-slate-200 p-3"
+                className={inputClass}
               >
                 <option value="makanan">Makanan</option>
                 <option value="minuman">Minuman</option>
@@ -1214,17 +1211,18 @@ export default function AdminView() {
                 value={price}
                 onChange={(e) => setPrice(e.target.value)}
                 placeholder="Harga produk"
-                className="mb-3 w-full rounded-xl border border-slate-200 p-3"
+                className={inputClass}
               />
 
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Deskripsi produk"
-                className="mb-3 w-full rounded-xl border border-slate-200 p-3"
+                className={inputClass}
+                rows={3}
               />
 
-              <div className="mb-3 rounded-xl border border-dashed border-slate-300 p-4">
+              <div className="mb-3 min-w-0 rounded-xl border border-dashed border-slate-300 p-3 sm:p-4">
                 <label className="mb-2 block font-bold">
                   Foto Produk
                 </label>
@@ -1232,18 +1230,18 @@ export default function AdminView() {
                   type="file"
                   accept="image/*"
                   onChange={handlePhotoChange}
-                  className="w-full text-sm"
+                  className="block w-full min-w-0 max-w-full text-sm"
                 />
 
                 {(previewUrl || existingImageUrl) && (
-                  <div className="mt-3">
+                  <div className="mt-3 min-w-0">
                     <p className="mb-2 text-sm text-slate-500">
                       Pratinjau foto:
                     </p>
                     <img
                       src={previewUrl || existingImageUrl}
                       alt="Pratinjau produk"
-                      className="h-40 w-full rounded-xl object-cover"
+                      className="h-40 w-full max-w-full rounded-xl object-cover"
                     />
                     <button
                       type="button"
@@ -1260,7 +1258,7 @@ export default function AdminView() {
               </div>
 
               {error && (
-                <p className="mb-3 rounded-lg bg-red-100 p-3 text-sm text-red-800">
+                <p className="mb-3 break-words rounded-lg bg-red-100 p-3 text-sm text-red-800">
                   {error}
                 </p>
               )}
@@ -1269,7 +1267,7 @@ export default function AdminView() {
                 type="button"
                 onClick={addMenu}
                 disabled={saving}
-                className="w-full rounded-xl bg-green-800 py-3 font-bold text-white hover:bg-green-900 disabled:opacity-50"
+                className={`${buttonClass} bg-green-800 text-white hover:bg-green-900`}
               >
                 {saving
                   ? 'Menyimpan...'
@@ -1282,18 +1280,15 @@ export default function AdminView() {
                 <button
                   type="button"
                   onClick={cancelEdit}
-                  className="mt-2 w-full rounded-xl bg-slate-200 py-3 font-bold text-slate-700"
+                  className={`${buttonClass} mt-2 bg-slate-200 text-slate-700`}
                 >
                   Batal Edit
                 </button>
               )}
             </section>
 
-            <section
-              id="daftar-menu-admin"
-              className="scroll-mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm"
-            >
-              <h2 className="mb-4 text-lg font-bold text-green-900">
+            <section id="daftar-menu-admin" className={sectionClass}>
+              <h2 className="mb-4 break-words text-lg font-bold text-green-900">
                 Daftar Produk ({menus.length})
               </h2>
 
@@ -1302,11 +1297,11 @@ export default function AdminView() {
                   Belum ada produk.
                 </p>
               ) : (
-                <div className="divide-y divide-slate-100">
+                <div className="min-w-0 divide-y divide-slate-100">
                   {menus.map((menu) => (
                     <article
                       key={menu.id}
-                      className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
+                      className="flex min-w-0 flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
                     >
                       <div className="flex min-w-0 items-center gap-3">
                         {menu.image_url && (
@@ -1318,10 +1313,10 @@ export default function AdminView() {
                         )}
 
                         <div className="min-w-0">
-                          <p className="font-bold text-slate-900">
+                          <p className="break-words font-bold text-slate-900">
                             {menu.name}
                           </p>
-                          <p className="text-sm text-slate-500">
+                          <p className="break-words text-sm text-slate-500">
                             {menu.category} · {rupiah(Number(menu.price) || 0)}
                           </p>
                           <p className="text-xs text-slate-500">
@@ -1330,25 +1325,25 @@ export default function AdminView() {
                         </div>
                       </div>
 
-                      <div className="grid shrink-0 grid-cols-3 gap-2 sm:flex sm:flex-col">
+                      <div className="grid min-w-0 grid-cols-1 gap-2 sm:w-auto sm:shrink-0 sm:grid-cols-3">
                         <button
                           type="button"
                           onClick={() => startEdit(menu)}
-                          className="rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
+                          className="min-w-0 rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
                         >
                           Edit
                         </button>
                         <button
                           type="button"
                           onClick={() => toggleAvailability(menu)}
-                          className="rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-800"
+                          className="min-w-0 rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-800"
                         >
                           Ubah Status
                         </button>
                         <button
                           type="button"
                           onClick={() => removeMenu(menu)}
-                          className="rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
+                          className="min-w-0 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
                         >
                           Hapus
                         </button>
