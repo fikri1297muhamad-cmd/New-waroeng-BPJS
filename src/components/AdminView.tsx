@@ -180,7 +180,7 @@ export default function AdminView() {
     formData.append('upload_preset', 'waroeng_bpjs');
 
     const response = await fetch(
-      'https://api.cloudinary.com/v1_1/irwzbli/image/upload',
+      'https://api.cloudinary.com/v1_1/irwzbli5/image/upload',
       {
         method: 'POST',
         body: formData
