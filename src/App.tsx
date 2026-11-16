@@ -564,7 +564,7 @@ export default function App() {
 
   if (successOrder) {
     return (
-      <main className="receipt-screen min-h-screen bg-green-50 p-4">
+      <main className="receipt-screen flex h-[100dvh] min-h-0 items-center justify-center overflow-hidden bg-green-50 p-2 sm:p-4">
         <style>{`
           @page {
             margin: 12mm;
@@ -576,17 +576,30 @@ export default function App() {
             }
 
             .receipt-screen {
+              display: block !important;
+              height: auto !important;
               min-height: 0 !important;
+              overflow: visible !important;
               padding: 0 !important;
               background: white !important;
             }
 
             .receipt-card {
+              display: block !important;
+              width: 100% !important;
               max-width: none !important;
+              height: auto !important;
+              min-height: 0 !important;
+              overflow: visible !important;
               margin: 0 !important;
               padding: 0 !important;
               border-radius: 0 !important;
               box-shadow: none !important;
+            }
+
+            .receipt-details {
+              flex: none !important;
+              overflow: visible !important;
             }
 
             .receipt-actions {
@@ -599,89 +612,116 @@ export default function App() {
           }
         `}</style>
 
-        <div className="receipt-card mx-auto max-w-lg rounded-2xl bg-white p-5 shadow-lg">
-          <div className="text-center">
-            <img
-              src="/logo.png"
-              alt="Logo Waroeng BPJS"
-              className="mx-auto mb-3 h-24 w-24 object-contain"
-            />
+        <div className="receipt-card mx-auto flex h-full min-h-0 w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white p-3 shadow-lg sm:p-5">
+          {/* IDENTITAS WAROENG */}
+          <div className="shrink-0 text-center">
+            <div className="flex items-center justify-center gap-2">
+              <img
+                src="/logo.png"
+                alt="Logo Waroeng BPJS"
+                className="h-12 w-12 object-contain sm:h-14 sm:w-14"
+              />
 
-            <h1 className="text-2xl font-extrabold text-green-800">
-              WAROENG BPJS
-            </h1>
+              <div className="text-left">
+                <h1 className="text-lg font-extrabold leading-tight text-green-800 sm:text-2xl">
+                  WAROENG BPJS
+                </h1>
 
-            <p className="mt-2 text-xs leading-relaxed text-gray-600">
-              Jl. Kandang Sapi 001/002 No. 01 Desa Tanjungsari
-              <br />
+                <p className="text-[10px] text-gray-600 sm:text-xs">
+                  Budget pas jajanan sehat
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-1 text-[9px] leading-relaxed text-gray-600 sm:text-xs">
+              Jl. Kandang Sapi 001/002 No. 01 Desa Tanjungsari,
               Kecamatan Sukaluyu, Kabupaten Cianjur
             </p>
           </div>
 
-          <hr className="my-4" />
+          <hr className="my-2 shrink-0 border-gray-200" />
 
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <p className="text-xs text-gray-500">NO. MEJA</p>
-              <p className="font-bold">
-                Meja {String(successOrder.table).padStart(2, '0')}
-              </p>
+          {/* NAMA PEMESAN DAN NOMOR MEJA */}
+          <div className="shrink-0">
+            <div className="grid grid-cols-2 gap-3 text-xs sm:text-sm">
+              <div>
+                <p className="text-[9px] text-gray-500 sm:text-[10px]">
+                  NO. MEJA
+                </p>
+
+                <p className="font-bold text-gray-800">
+                  Meja {String(successOrder.table).padStart(2, '0')}
+                </p>
+              </div>
+
+              <div className="min-w-0">
+                <p className="text-[9px] text-gray-500 sm:text-[10px]">
+                  NAMA PEMESAN
+                </p>
+
+                <p className="break-words font-bold text-gray-800">
+                  {successOrder.name}
+                </p>
+              </div>
             </div>
 
-            <div className="min-w-0">
-              <p className="text-xs text-gray-500">NAMA PEMESAN</p>
-              <p className="break-words font-bold">
-                {successOrder.name}
-              </p>
-            </div>
-          </div>
-
-          <hr className="my-4" />
-
-          <div className="text-center">
-            <p className="text-sm font-bold text-gray-700">
-              NOMOR PESANAN
-            </p>
-
-            <p className="mt-1 break-all text-xl font-extrabold text-green-800">
-              {successOrder.orderCode}
-            </p>
-
-            {orderQrDataUrl ? (
-              <img
-                src={orderQrDataUrl}
-                alt="QR Pesanan"
-                className="mx-auto mt-3 h-44 w-44 object-contain"
-              />
-            ) : (
-              <p className="mt-5 text-sm text-gray-500">
-                Menyiapkan QR pesanan...
-              </p>
-            )}
-
-            <p className="mt-2 text-xs text-gray-500">
-              QR Code Nomor Pesanan
+            <p className="mt-1 text-[9px] leading-relaxed text-green-800 sm:text-[10px]">
+              Silakan screenshot pesanan Anda dan tunjukkan kepada staf kasir kami.
             </p>
           </div>
 
-          <hr className="my-4" />
+          <hr className="my-2 shrink-0 border-gray-200" />
 
-          <h2 className="mb-3 font-extrabold text-gray-800">
-            RINCIAN PESANAN
-          </h2>
+          {/* NOMOR DAN QR PESANAN */}
+          <div className="flex shrink-0 items-center justify-center gap-3">
+            <div className="min-w-0 flex-1 text-center">
+              <p className="text-[10px] font-bold text-gray-700 sm:text-xs">
+                NOMOR PESANAN
+              </p>
 
-          <div>
+              <p className="mt-1 break-all text-base font-extrabold text-green-800 sm:text-xl">
+                {successOrder.orderCode}
+              </p>
+
+              <p className="mt-1 text-[9px] text-gray-500 sm:text-[10px]">
+                QR Code Nomor Pesanan
+              </p>
+            </div>
+
+            <div className="flex h-24 w-24 shrink-0 items-center justify-center sm:h-28 sm:w-28">
+              {orderQrDataUrl ? (
+                <img
+                  src={orderQrDataUrl}
+                  alt="QR Pesanan"
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <p className="text-center text-[9px] text-gray-500">
+                  Menyiapkan QR pesanan...
+                </p>
+              )}
+            </div>
+          </div>
+
+          <hr className="my-2 shrink-0 border-gray-200" />
+
+          {/* HANYA BAGIAN INI YANG DAPAT DIGULIR */}
+          <div className="receipt-details min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <h2 className="mb-1 text-xs font-extrabold text-gray-800 sm:text-sm">
+              RINCIAN PESANAN
+            </h2>
+
             {successOrder.items.map((item, index) => (
               <div
                 key={`${item.menu_id}-${index}`}
-                className="receipt-item grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-gray-100 py-3 text-sm"
+                className="receipt-item grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-gray-100 py-2 text-xs sm:text-sm"
               >
                 <div className="min-w-0">
                   <p className="break-words font-semibold text-gray-800">
                     {index + 1}. {item.item_name}
                   </p>
 
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-0.5 text-[10px] text-gray-500 sm:text-xs">
                     {item.quantity} × {rupiah(item.item_price)}
                   </p>
                 </div>
@@ -693,49 +733,53 @@ export default function App() {
             ))}
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-3 rounded-xl bg-green-50 p-4">
-            <span className="font-extrabold text-gray-800">
-              TOTAL
-            </span>
+          {/* TOTAL DAN INFORMASI PEMBAYARAN TETAP TERLIHAT */}
+          <div className="mt-2 shrink-0">
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-green-50 px-3 py-2">
+              <span className="text-sm font-extrabold text-gray-800">
+                TOTAL
+              </span>
 
-            <span className="text-lg font-extrabold text-green-800">
-              {rupiah(successOrder.total)}
-            </span>
-          </div>
+              <span className="text-base font-extrabold text-green-800">
+                {rupiah(successOrder.total)}
+              </span>
+            </div>
 
-          <div className="mt-5 rounded-xl bg-green-50 p-4 text-sm leading-relaxed text-gray-800">
-            <p className="font-extrabold text-green-800">
-              INFORMASI PEMBAYARAN
-            </p>
+            <div className="mt-2 rounded-lg bg-green-50 px-3 py-2 text-[10px] leading-relaxed text-gray-800 sm:text-xs">
+              <p className="font-extrabold text-green-800">
+                INFORMASI PEMBAYARAN
+              </p>
 
-            <p className="mt-2">
-              Silakan lakukan pembayaran di kasir dengan menunjukkan
-              bukti pesanan ini atau QR kode pesanan kepada staf kasir.
-            </p>
+              <p className="mt-1">
+                Silakan lakukan pembayaran di kasir dengan menunjukkan
+                bukti pesanan ini atau QR kode pesanan kepada staf kasir.
+              </p>
 
-            <p className="mt-3 font-semibold text-amber-800">
-              Status pembayaran: BELUM LUNAS
-            </p>
+              <p className="mt-1 font-semibold text-amber-800">
+                Status pembayaran: BELUM LUNAS
+              </p>
 
-            <p className="mt-4 text-center text-lg font-extrabold text-green-800">
-              TERIMA KASIH
-            </p>
-          </div>
+              <p className="mt-1 text-center text-sm font-extrabold text-green-800">
+                TERIMA KASIH
+              </p>
+            </div>
 
-          <div className="receipt-actions mt-5 grid gap-3">
-            <button
-              onClick={() => window.print()}
-              className="w-full rounded-xl bg-orange-500 py-3 font-bold text-white hover:bg-orange-600"
-            >
-              Cetak / Simpan PDF
-            </button>
+            {/* TOMBOL SELALU TERLIHAT */}
+            <div className="receipt-actions mt-2 grid shrink-0 grid-cols-2 gap-2">
+              <button
+                onClick={() => window.print()}
+                className="w-full rounded-lg bg-orange-500 px-2 py-2.5 text-xs font-bold text-white hover:bg-orange-600 sm:text-sm"
+              >
+                Cetak / Simpan PDF
+              </button>
 
-            <button
-              onClick={() => setSuccessOrder(null)}
-              className="w-full rounded-xl bg-green-800 py-3 font-bold text-white"
-            >
-              ← Kembali ke Halaman Utama Pelanggan
-            </button>
+              <button
+                onClick={() => setSuccessOrder(null)}
+                className="w-full rounded-lg bg-green-800 px-2 py-2.5 text-xs font-bold text-white sm:text-sm"
+              >
+                ← Kembali ke Halaman Utama
+              </button>
+            </div>
           </div>
         </div>
       </main>
