@@ -743,7 +743,7 @@ export default function App() {
   }
 
   return (
-    <main className="min-h-screen bg-green-50 pb-80">
+    <main className="min-h-screen bg-green-50 pb-[max(20rem,42dvh)]">
       {/* HEADER PELANGGAN */}
       <header className="bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-5">
         <div className="mx-auto max-w-5xl">
@@ -911,7 +911,7 @@ export default function App() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 sm:gap-5">
           {filteredMenus.map((item) => (
             <article
               key={item.id}
