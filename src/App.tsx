@@ -743,8 +743,8 @@ export default function App() {
   }
 
   return (
-    <main className="min-h-screen bg-green-50 pb-[max(20rem,42dvh)]">
-      {/* HEADER PELANGGAN */}
+    <main className="min-h-screen overflow-x-hidden bg-green-50 pb-[calc(230px+env(safe-area-inset-bottom))]">
+      {/* HEADER PELANGGAN - DIPERTAHANKAN */}
       <header className="bg-white px-4 py-4 shadow-sm sm:px-6 sm:py-5">
         <div className="mx-auto max-w-5xl">
           <div className="grid grid-cols-[64px_minmax(0,1fr)_auto] items-center gap-2 sm:grid-cols-[100px_minmax(0,1fr)_auto] sm:gap-4">
@@ -780,10 +780,10 @@ export default function App() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-5xl px-4 py-5">
+      <section className="mx-auto max-w-5xl px-4 py-4">
         {/* BANNER PROMOSI DINAMIS */}
         {activeBanners.length > 0 && (
-          <div className="mb-6 space-y-4">
+          <div className="mb-5 space-y-4">
             {activeBanners.map((banner) => (
               <article
                 key={banner.id}
@@ -817,48 +817,49 @@ export default function App() {
           </div>
         )}
 
-        {/* STATUS QR MEJA DAN DATA PEMESAN */}
-        <div className="mb-7">
-          <div className="mb-4 rounded-2xl border border-green-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <p className="font-extrabold text-gray-800">
-                STATUS QR MEJA
-              </p>
+        {/* STATUS QR MEJA - VERSI RINGKAS */}
+        <div className="mb-5 border-b border-green-100 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-extrabold text-gray-800">
+              STATUS QR MEJA
+            </h2>
 
-              <span
-                className={`rounded-full px-3 py-1 text-[10px] font-bold ${
-                  tableQrVerified
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-amber-100 text-amber-800'
-                }`}
-              >
-                {tableQrVerified ? 'TERVERIFIKASI' : 'BELUM TERVERIFIKASI'}
-              </span>
-            </div>
-
-            <p
-              className={`mt-2 text-sm ${
+            <span
+              className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
                 tableQrVerified
-                  ? 'font-semibold text-green-700'
-                  : 'text-gray-600'
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-amber-100 text-amber-800'
               }`}
             >
-              {tableQrMessage}
-            </p>
-
-            {tableQrChecking && (
-              <p className="mt-2 text-xs text-gray-500">
-                Mohon tunggu, sistem sedang memeriksa QR.
-              </p>
-            )}
-
-            {tableQrVerified && (
-              <p className="mt-3 text-lg font-extrabold text-green-900">
-                Meja {String(tableNumber).padStart(2, '0')}
-              </p>
-            )}
+              {tableQrVerified ? 'TERVERIFIKASI' : 'BELUM TERVERIFIKASI'}
+            </span>
           </div>
 
+          <p
+            className={`mt-1.5 text-xs leading-relaxed ${
+              tableQrVerified
+                ? 'font-semibold text-green-700'
+                : 'text-gray-600'
+            }`}
+          >
+            {tableQrMessage}
+          </p>
+
+          {tableQrChecking && (
+            <p className="mt-1 text-[10px] text-gray-500">
+              Mohon tunggu, sistem sedang memeriksa QR.
+            </p>
+          )}
+
+          {tableQrVerified && (
+            <p className="mt-1 text-sm font-extrabold text-green-900">
+              Meja {String(tableNumber).padStart(2, '0')}
+            </p>
+          )}
+        </div>
+
+        {/* DATA PEMESAN */}
+        <div className="mb-5">
           <CustomerForm
             tableNumber={tableNumber || null}
             tableQrVerified={tableQrVerified}
