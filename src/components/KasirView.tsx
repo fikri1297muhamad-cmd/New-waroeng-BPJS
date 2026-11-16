@@ -207,6 +207,10 @@ export default function KasirView() {
 
   const [activePage, setActivePage] = useState<CashierPage>('dashboard');
   const activePageInfo = cashierNavigation.find(item => item.id === activePage);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => new Date());
+
 
   const [search, setSearch] = useState('');
   const [selectedOrderId, setSelectedOrderId] = useState('');
@@ -315,6 +319,11 @@ export default function KasirView() {
       active = false;
     };
   }, []);
+
+  const pendingOrders = useMemo(
+    () => orders.filter(order => order.status === 'menunggu'),
+    [orders]
+  );
 
   const selectedOrder =
     orders.find(order => order.id === selectedOrderId) ?? null;
@@ -1774,21 +1783,45 @@ export default function KasirView() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto flex max-w-[1600px] flex-col gap-5 p-3 sm:p-5 lg:flex-row">
-        <aside className="w-full shrink-0 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm lg:sticky lg:top-4 lg:h-fit lg:w-64">
-          <div className="mb-5 border-b border-gray-100 pb-4">
-            <p className="text-xs font-bold tracking-widest text-green-700">
-              WAROENG BPJS
-            </p>
-            <h2 className="mt-1 text-xl font-extrabold text-gray-900">
-              Panel Kasir
-            </h2>
-            <p className="mt-1 text-xs text-gray-500">
-              Sistem pengelolaan pesanan
-            </p>
+      <div className="mx-auto flex min-h-screen max-w-[1600px] gap-0 p-0 lg:gap-4 lg:p-4">
+        {mobileSidebarOpen && (
+          <button
+            type="button"
+            aria-label="Tutup menu"
+            onClick={() => setMobileSidebarOpen(false)}
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          />
+        )}
+
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 flex w-72 shrink-0 flex-col border-r border-gray-100 bg-white p-4 shadow-xl transition-transform duration-200 lg:sticky lg:top-4 lg:z-auto lg:h-[calc(100vh-2rem)] lg:w-56 lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
+            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          <div className="mb-5 flex items-center justify-between border-b border-gray-100 pb-4">
+            <div>
+              <p className="text-[10px] font-extrabold tracking-[0.18em] text-green-700">
+                WAROENG BPJS
+              </p>
+              <h2 className="mt-1 text-lg font-extrabold text-gray-900">
+                Panel Kasir
+              </h2>
+              <p className="mt-1 text-[10px] text-gray-500">
+                Sistem pengelolaan pesanan
+              </p>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Tutup menu"
+              onClick={() => setMobileSidebarOpen(false)}
+              className="rounded-lg px-3 py-2 text-xl text-gray-500 hover:bg-gray-100 lg:hidden"
+            >
+              ×
+            </button>
           </div>
 
-          <nav className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
+          <nav className="flex-1 space-y-1.5 overflow-y-auto">
             {cashierNavigation.map(item => (
               <button
                 type="button"
@@ -1798,21 +1831,28 @@ export default function KasirView() {
                   setSelectedOrderId('');
                   setSearch('');
                   setError('');
+                  setMobileSidebarOpen(false);
+                  setNotificationOpen(false);
                 }}
-                className={`flex min-w-0 items-center gap-3 rounded-xl p-3 text-left transition ${
+                className={`flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
                   activePage === item.id
                     ? 'bg-green-800 text-white shadow-sm'
-                    : 'bg-gray-50 text-gray-700 hover:bg-green-50'
+                    : 'text-gray-700 hover:bg-green-50'
                 }`}
               >
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-black/5 text-lg font-extrabold">
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold ${
+                  activePage === item.id
+                    ? 'bg-white/15 text-white'
+                    : 'bg-green-50 text-green-800'
+                }`}>
                   {item.icon}
                 </span>
+
                 <span className="min-w-0">
-                  <span className="block text-xs font-extrabold sm:text-sm">
+                  <span className="block text-xs font-extrabold">
                     {item.label}
                   </span>
-                  <span className={`hidden text-[10px] sm:block ${
+                  <span className={`mt-0.5 block text-[9px] leading-relaxed ${
                     activePage === item.id ? 'text-green-100' : 'text-gray-400'
                   }`}>
                     {item.description}
@@ -1821,26 +1861,175 @@ export default function KasirView() {
               </button>
             ))}
           </nav>
+
+          <div className="mt-4 border-t border-gray-100 pt-3">
+            <p className="text-[10px] text-gray-400">
+              WAROENG BPJS · AREA KASIR
+            </p>
+            <p className="mt-1 text-[10px] font-semibold text-green-800">
+              Sistem pelayanan pesanan
+            </p>
+          </div>
         </aside>
 
-        <main className="min-w-0 flex-1">
-          <header className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-            <div>
-              <p className="text-xs font-bold text-green-700">
-                WAROENG BPJS · AREA KASIR
-              </p>
-              <h1 className="mt-1 text-lg font-extrabold text-gray-900">
-                {activePageInfo?.label || 'Dashboard'}
-              </h1>
-              <p className="mt-1 text-xs text-gray-500">
-                {activePageInfo?.description}
-              </p>
+        <main className="min-w-0 flex-1 p-3 sm:p-5 lg:p-0">
+          <header className="relative z-30 mb-5 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-none border-b border-gray-100 bg-white p-3 shadow-sm sm:rounded-2xl sm:border sm:p-4 lg:rounded-2xl">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                aria-label="Buka menu navigasi"
+                onClick={() => setMobileSidebarOpen(true)}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-xl text-green-800 hover:bg-green-50 lg:hidden"
+              >
+                ☰
+              </button>
+
+              <div className="min-w-0">
+                <p className="text-[10px] font-extrabold tracking-wider text-green-700">
+                  WAROENG BPJS · AREA KASIR
+                </p>
+                <h1 className="mt-1 truncate text-base font-extrabold text-gray-900 sm:text-lg">
+                  {activePageInfo?.label || 'Dashboard'}
+                </h1>
+                <p className="mt-0.5 hidden text-[10px] text-gray-500 sm:block">
+                  {activePageInfo?.description}
+                </p>
+              </div>
             </div>
-            <div className="rounded-xl bg-green-50 px-3 py-2 text-right">
-              <p className="text-[10px] font-bold text-green-700">AKUN AKTIF</p>
-              <p className="max-w-[180px] truncate text-sm font-extrabold text-green-950">
-                {cashierProfile?.full_name || cashierEmail || 'Kasir'}
-              </p>
+
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="hidden text-right sm:block">
+                <p className="text-[10px] font-bold text-gray-500">
+                  {new Intl.DateTimeFormat('id-ID', {
+                    timeZone: 'Asia/Jakarta',
+                    weekday: 'long',
+                    day: '2-digit',
+                    month: 'short',
+                    year: 'numeric'
+                  }).format(currentTime)}
+                </p>
+                <p className="mt-1 text-xs font-extrabold tabular-nums text-green-800">
+                  {new Intl.DateTimeFormat('id-ID', {
+                    timeZone: 'Asia/Jakarta',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hourCycle: 'h23'
+                  }).format(currentTime)} WIB
+                </p>
+              </div>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  aria-label="Notifikasi pesanan baru"
+                  aria-expanded={notificationOpen}
+                  onClick={() => setNotificationOpen(value => !value)}
+                  className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-lg text-gray-700 hover:bg-green-50"
+                >
+                  ♧
+                  {pendingOrders.length > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-extrabold text-white ring-2 ring-white">
+                      {pendingOrders.length > 99 ? '99+' : pendingOrders.length}
+                    </span>
+                  )}
+                </button>
+
+                {notificationOpen && (
+                  <div className="absolute right-0 top-12 z-50 w-[min(90vw,340px)] overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+                    <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+                      <div>
+                        <p className="text-sm font-extrabold text-gray-900">
+                          Pesanan Menunggu
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {pendingOrders.length} pesanan belum diproses
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-extrabold text-red-700">
+                        {pendingOrders.length}
+                      </span>
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto">
+                      {pendingOrders.length === 0 ? (
+                        <p className="px-4 py-8 text-center text-xs text-gray-500">
+                          Tidak ada pesanan yang menunggu.
+                        </p>
+                      ) : (
+                        pendingOrders.map(order => (
+                          <button
+                            type="button"
+                            key={order.id}
+                            onClick={() => {
+                              setActivePage('pesanan');
+                              setSelectedOrderId(order.id);
+                              setSearch('');
+                              setShowDetail(true);
+                              setNotificationOpen(false);
+                              setMobileSidebarOpen(false);
+                            }}
+                            className="block w-full border-b border-gray-100 px-4 py-3 text-left transition hover:bg-green-50"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-extrabold text-green-800">
+                                {order.order_code || 'Pesanan baru'}
+                              </span>
+                              <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-800">
+                                MENUNGGU
+                              </span>
+                            </div>
+                            <p className="mt-1 truncate text-xs font-semibold text-gray-800">
+                              {order.customer_name || 'Pelanggan'}
+                            </p>
+                            <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-gray-500">
+                              <span>
+                                Meja {String(order.table_number ?? '-').padStart(2, '0')}
+                              </span>
+                              <span>{formatDate(order.created_at)}</span>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActivePage('pesanan');
+                        setSelectedOrderId('');
+                        setSearch('');
+                        setNotificationOpen(false);
+                      }}
+                      className="w-full bg-green-50 px-4 py-3 text-xs font-extrabold text-green-800 hover:bg-green-100"
+                    >
+                      Buka Semua Pesanan Aktif
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="max-w-[125px] rounded-xl bg-green-50 px-2.5 py-2 sm:max-w-[180px] sm:px-3">
+                <p className="text-[9px] font-bold text-green-700">
+                  AKUN AKTIF
+                </p>
+                <p className="truncate text-xs font-extrabold text-green-950 sm:text-sm">
+                  {cashierProfile?.full_name || cashierEmail || 'Kasir'}
+                </p>
+              </div>
+            </div>
+
+            <div className="w-full text-right text-[10px] font-semibold text-gray-500 sm:hidden">
+              {new Intl.DateTimeFormat('id-ID', {
+                timeZone: 'Asia/Jakarta',
+                weekday: 'short',
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                hourCycle: 'h23'
+              }).format(currentTime)} WIB
             </div>
           </header>
 
