@@ -137,10 +137,14 @@ export default function App() {
     qrVerificationStarted.current = true;
 
     const verifyTableQr = async () => {
+      const storageKey = 'waroeng_bpjs_verified_table_qr';
       const currentUrl = new URL(window.location.href);
 
       const tableParam = currentUrl.searchParams.get('table');
       const tokenParam = currentUrl.searchParams.get('token');
+
+      let candidateTable: string | null = tableParam;
+      let candidateToken: string | null = tokenParam;
 
       if (tableParam !== null || tokenParam !== null) {
         currentUrl.searchParams.delete('table');
@@ -152,9 +156,34 @@ export default function App() {
           currentUrl.hash;
 
         window.history.replaceState({}, '', remainingUrl);
+
+        if (!tableParam || !tokenParam) {
+          sessionStorage.removeItem(storageKey);
+        }
+      } else {
+        const savedQr = sessionStorage.getItem(storageKey);
+
+        if (savedQr) {
+          try {
+            const parsed = JSON.parse(savedQr);
+
+            if (
+              parsed &&
+              parsed.table_number !== undefined &&
+              typeof parsed.token === 'string'
+            ) {
+              candidateTable = String(parsed.table_number);
+              candidateToken = parsed.token;
+            } else {
+              sessionStorage.removeItem(storageKey);
+            }
+          } catch {
+            sessionStorage.removeItem(storageKey);
+          }
+        }
       }
 
-      if (!tableParam || !tokenParam) {
+      if (!candidateTable || !candidateToken) {
         setTableNumber(0);
         setTableQrToken('');
         setTableQrVerified(false);
@@ -166,9 +195,13 @@ export default function App() {
       }
 
       if (
-        !/^(0?[1-9]|[1-4][0-9]|50)$/.test(tableParam) ||
-        !/^[A-Za-z0-9_-]{43}$/.test(tokenParam)
+        !/^(0?[1-9]|[1-4][0-9]|50)$/.test(candidateTable) ||
+        !/^[A-Za-z0-9_-]{43}$/.test(candidateToken)
       ) {
+        sessionStorage.removeItem(storageKey);
+        setTableNumber(0);
+        setTableQrToken('');
+        setTableQrVerified(false);
         setTableQrChecking(false);
         setTableQrMessage(
           'QR meja tidak valid. Silakan pindai ulang QR meja.'
@@ -176,13 +209,15 @@ export default function App() {
         return;
       }
 
-      const requestedTable = Number(tableParam);
+      const requestedTable = Number(candidateTable);
 
       setTableNumber(0);
       setTableQrToken('');
       setTableQrVerified(false);
       setTableQrChecking(true);
       setTableQrMessage('Memverifikasi QR meja...');
+
+      let serverRejected = false;
 
       try {
         const response = await fetch('/api/verify-table-qr', {
@@ -193,7 +228,7 @@ export default function App() {
           cache: 'no-store',
           body: JSON.stringify({
             table_number: requestedTable,
-            token: tokenParam
+            token: candidateToken
           })
         });
 
@@ -205,17 +240,30 @@ export default function App() {
           result?.verified !== true ||
           Number(result?.table_number) !== requestedTable
         ) {
+          serverRejected = true;
           throw new Error('QR meja tidak dapat diverifikasi.');
         }
 
+        sessionStorage.setItem(
+          storageKey,
+          JSON.stringify({
+            table_number: requestedTable,
+            token: candidateToken
+          })
+        );
+
         setTableNumber(requestedTable);
-        setTableQrToken(tokenParam);
+        setTableQrToken(candidateToken);
         setTableQrVerified(true);
         setTableQrMessage(
           `Meja ${String(requestedTable).padStart(2, '0')} berhasil diverifikasi.`
         );
       } catch (err) {
         console.error('Verifikasi QR meja gagal:', err);
+
+        if (serverRejected) {
+          sessionStorage.removeItem(storageKey);
+        }
 
         setTableNumber(0);
         setTableQrToken('');
