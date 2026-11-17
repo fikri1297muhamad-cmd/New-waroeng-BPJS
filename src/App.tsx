@@ -90,7 +90,7 @@ export default function App() {
 
   const [staffRole, setStaffRole] = useState<StaffRole | null>(null);
   const [staffName, setStaffName] = useState('');
-  const [showStaffLogin, setShowStaffLogin] = useState(false);
+  const isLoginPath = window.location.pathname === '/login';
 
   const [authChecking, setAuthChecking] = useState(true);
 
@@ -234,7 +234,6 @@ export default function App() {
   const handleStaffLogin = (name: string, role: StaffRole) => {
     setStaffName(name);
     setStaffRole(role);
-    setShowStaffLogin(false);
   };
 
   const handleStaffLogout = async () => {
@@ -246,7 +245,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
 
-    if (!showStaffLogin) {
+    if (!isLoginPath) {
       setAuthChecking(true);
     } else {
       setAuthChecking(false);
@@ -262,7 +261,7 @@ export default function App() {
         return;
       }
 
-      if (showStaffLogin) {
+      if (isLoginPath) {
         setAuthChecking(false);
         return;
       }
@@ -355,7 +354,7 @@ export default function App() {
       active = false;
       unsubscribe();
     };
-  }, [showStaffLogin]);
+  }, [isLoginPath]);
 
   useEffect(() => {
     const unsubscribe = listenToMenus(
@@ -553,11 +552,11 @@ export default function App() {
     );
   }
 
-  if (showStaffLogin) {
+  if (isLoginPath) {
     return (
       <StaffLogin
         onLogin={handleStaffLogin}
-        onBack={() => setShowStaffLogin(false)}
+        onBack={() => window.location.assign('/')}
       />
     );
   }
@@ -808,12 +807,6 @@ export default function App() {
               </p>
             </div>
 
-            <button
-              onClick={() => setShowStaffLogin(true)}
-              className="rounded-lg bg-green-800 px-2.5 py-2 text-[10px] font-bold text-white shadow-sm transition hover:bg-green-900 sm:px-4 sm:text-sm"
-            >
-              Login
-            </button>
           </div>
 
           <div className="mt-3 border-t border-green-100 pt-3 text-center text-[11px] leading-relaxed text-gray-600 sm:text-sm">
