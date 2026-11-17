@@ -84,7 +84,18 @@ export async function createOrder(data: {
     subtotal: number;
   }[];
   total_amount: number;
-}) {
+}): Promise<{
+  id: string;
+  order_code: string;
+  totalAmount: number;
+  items: {
+    menu_id: string;
+    item_name: string;
+    item_price: number;
+    quantity: number;
+    subtotal: number;
+  }[];
+}> {
   const response = await fetch('/api/create-order', {
     method: 'POST',
     headers: {
@@ -103,7 +114,7 @@ export async function createOrder(data: {
 
   const result = await response.json();
 
-  if (!response.ok || result.success !== true) {
+  if (!response.ok || result.success !== true || !result.order) {
     throw new Error(
       result.error || 'Pesanan gagal disimpan.'
     );
@@ -111,6 +122,8 @@ export async function createOrder(data: {
 
   return {
     id: result.order.orderId,
-    order_code: result.order.orderCode
+    order_code: result.order.orderCode,
+    totalAmount: result.order.totalAmount,
+    items: result.order.items
   };
 }

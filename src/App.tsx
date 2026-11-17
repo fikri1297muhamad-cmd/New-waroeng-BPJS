@@ -497,8 +497,8 @@ export default function App() {
         orderCode: result.order_code,
         name: customerName,
         table: tableNumber,
-        items: [...orderItems],
-        total
+        items: result.items,
+        total: result.totalAmount
       });
 
       setCart([]);
@@ -907,7 +907,8 @@ export default function App() {
           <CustomerForm
             tableNumber={tableNumber || null}
             tableQrVerified={tableQrVerified}
-            onSubmit={startConfirmation}
+            name={customerName}
+            onNameChange={setCustomerName}
           />
         </div>
 
@@ -1038,6 +1039,16 @@ export default function App() {
         items={cart}
         onAdd={addToCart}
         onRemove={removeFromCart}
+        onContinue={() => startConfirmation(customerName.trim(), tableNumber)}
+        canContinue={
+          tableQrVerified &&
+          Boolean(tableQrToken) &&
+          Number.isInteger(tableNumber) &&
+          tableNumber >= 1 &&
+          tableNumber <= 50 &&
+          /^[A-Za-z ]+$/.test(customerName.trim()) &&
+          cart.length > 0
+        }
       />
 
       {showConfirmation && (
