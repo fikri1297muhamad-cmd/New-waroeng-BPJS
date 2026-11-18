@@ -187,6 +187,7 @@ export default async function handler(
 
     const orderCode =
       `WB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    const tableSessionId = randomBytes(16).toString('hex');
 
     const itemRefs = normalizedItems.map(() =>
       db.collection('order_items').doc()
@@ -197,11 +198,7 @@ export default async function handler(
       const tableSnapshot = await transaction.get(tableRef);
       const qrSnapshot = await transaction.get(qrRef);
 
-      const activeOrdersSnapshot = await transaction.get(
-        ordersRef
-          .where('table_number', '==', tableNumber)
-          .where('payment_status', '==', 'belum_lunas')
-      );
+
 
       const menuSnapshots = await Promise.all(
         normalizedItems.map(item =>
@@ -227,6 +224,10 @@ export default async function handler(
         throw new Error('MEJA_TIDAK_AKTIF');
       }
 
+      if (tableData?.table_status !== 'kosong') {
+        throw new Error('MEJA_TIDAK_KOSONG');
+      }
+
       if (!qrSnapshot.exists) {
         throw new Error('QR_TIDAK_VALID');
       }
@@ -240,10 +241,6 @@ export default async function handler(
         !safeHashMatch(tableQrToken, qrData?.token_hash)
       ) {
         throw new Error('QR_TIDAK_VALID');
-      }
-
-      if (!activeOrdersSnapshot.empty) {
-        throw new Error('MEJA_SUDAH_DIPESAN');
       }
 
       const orderItems = [];
@@ -309,6 +306,7 @@ export default async function handler(
         order_code: orderCode,
         customer_name: customerName,
         table_number: tableNumber,
+        table_session_id: tableSessionId,
         status: 'menunggu',
         payment_status: 'belum_lunas',
         total_amount: totalAmount,
@@ -322,6 +320,12 @@ export default async function handler(
         });
       });
 
+      transaction.update(tableRef, {
+        table_status: 'terisi',
+        table_session_id: tableSessionId,
+        table_status_updated_at: FieldValue.serverTimestamp(),
+        table_status_updated_by: 'customer_qr'
+      });
       return {
         orderId: orderRef.id,
         orderCode,
@@ -346,7 +350,7 @@ export default async function handler(
       MEJA_TIDAK_DITEMUKAN: 'Nomor meja belum tersedia.',
       MEJA_TIDAK_AKTIF: 'Meja sedang tidak aktif.',
       QR_TIDAK_VALID: 'QR meja tidak valid atau sudah dinonaktifkan. Silakan pindai ulang.',
-      MEJA_SUDAH_DIPESAN: 'Meja ini masih memiliki pesanan yang belum lunas.',
+      MEJA_TIDAK_KOSONG: 'Meja ini belum kosong. Silakan hubungi Kasir.',
       PRODUK_TIDAK_DITEMUKAN: 'Salah satu produk tidak ditemukan.',
       PRODUK_TIDAK_TERSEDIA: 'Salah satu produk sedang tidak tersedia.',
       DATA_PRODUK_TIDAK_VALID: 'Data produk tidak valid.',
@@ -356,7 +360,7 @@ export default async function handler(
 
     if (knownErrors[message]) {
       const status =
-        message === 'MEJA_SUDAH_DIPESAN'
+        message === 'MEJA_TIDAK_KOSONG'
           ? 409
           : message === 'QR_TIDAK_VALID'
             ? 403

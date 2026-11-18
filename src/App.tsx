@@ -309,11 +309,6 @@ export default function App() {
         return;
       }
 
-      if (isLoginPath) {
-        setAuthChecking(false);
-        return;
-      }
-
       try {
         const profileSnapshot = await getDoc(
           doc(db, 'staff_profiles', user.uid)
@@ -359,7 +354,9 @@ export default function App() {
             !adminAccess ||
             adminAccessUntil <= currentTime
           ) {
-            await signOut(auth);
+            if (!isLoginPath) {
+              await signOut(auth);
+            }
 
             if (active) {
               setStaffRole(null);
@@ -579,23 +576,23 @@ export default function App() {
   if (staffRole) {
     return (
       <div>
-        <div className="flex items-center justify-between bg-green-900 p-4 text-white">
-          <div>
-            <p className="font-bold">{staffName}</p>
-            <p className="text-sm">
-              {staffRole === 'admin' ? 'Administrator' : 'Kasir'}
-            </p>
+        {staffRole === 'admin' && (
+          <div className="flex items-center justify-between bg-green-900 p-4 text-white">
+            <div>
+              <p className="font-bold">{staffName}</p>
+              <p className="text-sm">Administrator</p>
+            </div>
+
+            <button
+              onClick={handleStaffLogout}
+              className="rounded-lg bg-white px-4 py-2 font-bold text-green-900"
+            >
+              Keluar
+            </button>
           </div>
+        )}
 
-          <button
-            onClick={handleStaffLogout}
-            className="rounded-lg bg-white px-4 py-2 font-bold text-green-900"
-          >
-            Keluar
-          </button>
-        </div>
-
-        {staffRole === 'admin' ? <AdminView /> : <KasirView />}
+        {staffRole === 'admin' ? <AdminView /> : <KasirView onLogout={handleStaffLogout} />}
       </div>
     );
   }

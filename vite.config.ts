@@ -9,8 +9,12 @@ export default defineConfig({
   ],
   server: {
     proxy: {
+      '/api/update-table-status': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: true
+      },
       '/api': {
-        target: 'https://new-waroeng-bpjs.vercel.app',
+        target: 'http://localhost:3000',
         changeOrigin: true,
         secure: true
       }

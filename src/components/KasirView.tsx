@@ -5,7 +5,6 @@ import {
   onSnapshot,
   query,
   orderBy,
-  updateDoc,
   doc,
   where,
   getDocs,
@@ -42,6 +41,18 @@ type Order = {
   created_at: unknown;
   paid_at?: unknown;
   paid_by?: string;
+  table_session_id?: string;
+  cashier_archived_at?: unknown;
+  cashier_archived_by?: string;
+};
+
+type TableRecord = {
+  table_number?: number;
+  Table_number?: number;
+  table_status?: string;
+  table_session_id?: string;
+  is_active?: boolean;
+  table_name?: string;
 };
 
 type OrderGroup = [string, Order[]];
@@ -53,20 +64,53 @@ type CashierProfile = {
 };
 
 const TOTAL_TABLES = 50;
-const ACTIVE_STATUSES = ['menunggu', 'diproses', 'siap'];
+
+const isOrderInCurrentTableSession = (
+  order: Order,
+  tableRecords: TableRecord[]
+): boolean => {
+  if (order.cashier_archived_at) return false;
+
+  const tableNumber = Number(order.table_number);
+  if (!Number.isInteger(tableNumber) || tableNumber < 1 || tableNumber > TOTAL_TABLES) {
+    return false;
+  }
+
+  const table = tableRecords.find(
+    item => Number(item.table_number ?? item.Table_number) === tableNumber
+  );
+
+  if (!table) return true;
+  if (table.table_status === 'kosong') return false;
+  if (
+    table.table_status &&
+    !['terisi', 'perlu_dibersihkan'].includes(table.table_status)
+  ) return false;
+
+  const tableSessionId = String(table.table_session_id || '').trim();
+  const orderSessionId = String(order.table_session_id || '').trim();
+
+  if (tableSessionId || orderSessionId) {
+    return Boolean(tableSessionId && orderSessionId && tableSessionId === orderSessionId);
+  }
+
+  // Fallback untuk data lama yang belum memiliki ID sesi.
+  return true;
+};
+
 
 const cashierNavigation: {
-  id: CashierPage;
+  id: CashierPage | 'keluar';
   label: string;
-  icon: string;
   description: string;
 }[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: '▦', description: 'Ringkasan dan pengelolaan pesanan.' },
-  { id: 'pesanan', label: 'Pesanan Aktif', icon: '▤', description: 'Pengelolaan pesanan yang masih berjalan.' },
-  { id: 'riwayat', label: 'Riwayat Pesanan', icon: '◷', description: 'Daftar pesanan selesai dan dibatalkan.' },
-  { id: 'laporan', label: 'Laporan Kas', icon: 'Rp', description: 'Rekap pemasukan dan transaksi kasir.' },
-  { id: 'meja', label: 'Status Meja', icon: '▦', description: 'Pemantauan kondisi seluruh meja.' },
-  { id: 'akun', label: 'Akun Kasir', icon: '♙', description: 'Profil dan aktivitas akun kasir.' }
+  { id: 'dashboard', label: 'Dashboard', description: 'Ringkasan aktivitas kasir.' },
+  { id: 'pesanan', label: 'Transaksi / Pembayaran', description: 'Pesanan aktif dan pembayaran.' },
+  { id: 'meja', label: 'Panel Status Meja', description: 'Pemantauan kondisi meja.' },
+  { id: 'riwayat', label: 'Riwayat Pesanan', description: 'Daftar pesanan selesai dan dibatalkan.' },
+  { id: 'laporan', label: 'Riwayat Kas', description: 'Rekap pemasukan dan transaksi.' },
+  { id: 'akun', label: 'Profil Kasir', description: 'Informasi profil akun kasir.' },
+  { id: 'keluar', label: 'Keluar', description: 'Keluar dari akun kasir.' }
 ];
 
 const rupiah = (value: number) =>
@@ -75,14 +119,6 @@ const rupiah = (value: number) =>
     currency: 'IDR',
     maximumFractionDigits: 0
   }).format(value);
-
-const statusLabels: Record<string, string> = {
-  menunggu: 'Pesanan Baru',
-  diproses: 'Diproses',
-  siap: 'Siap Disajikan',
-  selesai: 'Selesai',
-  dibatalkan: 'Dibatalkan'
-};
 
 function getOrderDate(value: unknown): Date | null {
   try {
@@ -173,17 +209,6 @@ function formatGroupDate(key: string) {
   }).format(date);
 }
 
-function statusColor(status: string) {
-  switch (status) {
-    case 'menunggu': return 'bg-amber-100 text-amber-800';
-    case 'diproses': return 'bg-blue-100 text-blue-800';
-    case 'siap': return 'bg-emerald-100 text-emerald-800';
-    case 'selesai': return 'bg-gray-100 text-gray-700';
-    case 'dibatalkan': return 'bg-red-100 text-red-800';
-    default: return 'bg-gray-100 text-gray-700';
-  }
-}
-
 function groupOrdersByDate(orders: Order[]): OrderGroup[] {
   const groups: Record<string, Order[]> = {};
 
@@ -200,8 +225,11 @@ function groupOrdersByDate(orders: Order[]): OrderGroup[] {
   });
 }
 
-export default function KasirView() {
+export default function KasirView({ onLogout }: { onLogout: () => void }) {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [tables, setTables] = useState<TableRecord[]>([]);
+  const [tableLoading, setTableLoading] = useState(true);
+  const [processingTableNumber, setProcessingTableNumber] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -220,7 +248,6 @@ export default function KasirView() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('tunai');
   const [processingPayment, setProcessingPayment] = useState(false);
-  const [processingStatus, setProcessingStatus] = useState(false);
   const detailRef = useRef<HTMLDivElement>(null);
 
   const [receipt, setReceipt] = useState<{
@@ -262,6 +289,38 @@ export default function KasirView() {
         console.error('Gagal membaca pesanan:', err);
         setError('Gagal membaca pesanan. Periksa login dan hak akses kasir.');
         setLoading(false);
+      }
+    );
+  }, []);
+
+  // Membaca status meja secara realtime dari Firestore.
+  useEffect(() => {
+    return onSnapshot(
+      collection(db, 'restaurant_tables'),
+      snapshot => {
+        const loadedTables = snapshot.docs
+          .map(item => {
+            const data = item.data() as TableRecord;
+            const idNumber = Number(item.id.match(/\d+/)?.[0] ?? 0);
+            const tableNumber = Number(
+              data.table_number ?? data.Table_number ?? idNumber
+            );
+
+            return { ...data, table_number: tableNumber };
+          })
+          .filter(table =>
+            Number.isInteger(table.table_number) &&
+            Number(table.table_number) >= 1 &&
+            Number(table.table_number) <= TOTAL_TABLES
+          );
+
+        setTables(loadedTables);
+        setTableLoading(false);
+      },
+      err => {
+        console.error('Gagal membaca status meja:', err);
+        setError('Gagal membaca status meja. Periksa koneksi dan hak akses kasir.');
+        setTableLoading(false);
       }
     );
   }, []);
@@ -321,8 +380,11 @@ export default function KasirView() {
   }, []);
 
   const pendingOrders = useMemo(
-    () => orders.filter(order => order.status === 'menunggu'),
-    [orders]
+    () => orders.filter(order =>
+      order.payment_status !== 'lunas' &&
+      isOrderInCurrentTableSession(order, tables)
+    ),
+    [orders, tables]
   );
 
   const selectedOrder =
@@ -352,7 +414,6 @@ export default function KasirView() {
       totalOrders: orders.length,
       paidCount: paidOrders.length,
       unpaidCount: unpaidOrders.length,
-      processingCount: orders.filter(order => order.status === 'diproses').length,
       totalIncome,
       cashIncome,
       nonCashIncome,
@@ -376,8 +437,10 @@ export default function KasirView() {
   );
 
   const activeOrders = useMemo(
-    () => orders.filter(order => ACTIVE_STATUSES.includes(order.status)),
-    [orders]
+    () => orders.filter(order =>
+      isOrderInCurrentTableSession(order, tables)
+    ),
+    [orders, tables]
   );
 
   const filteredActiveOrders = useMemo(() => {
@@ -397,6 +460,7 @@ export default function KasirView() {
 
   const historyOrders = useMemo(
     () => orders.filter(order =>
+      Boolean(order.cashier_archived_at) ||
       ['selesai', 'dibatalkan'].includes(order.status)
     ),
     [orders]
@@ -417,33 +481,71 @@ export default function KasirView() {
     [filteredHistoryOrders]
   );
 
-  // Status meja berdasarkan pesanan aktif, bukan status pembayaran.
+  // Status meja mengikuti dokumen restaurant_tables.
   const tableStatuses = useMemo(() => {
     return Array.from({ length: TOTAL_TABLES }, (_, index) => {
       const tableNumber = index + 1;
+      const record = tables.find(
+        table => Number(table.table_number ?? table.Table_number) === tableNumber
+      );
+      const storedStatus = record?.table_status;
 
-      const tableOrders = activeOrders
-        .filter(order => Number(order.table_number) === tableNumber)
+      const tableSessionId = String(record?.table_session_id || '').trim();
+      const tableOrders = orders
+        .filter(order => {
+          if (
+            Number(order.table_number) !== tableNumber ||
+            order.cashier_archived_at ||
+            storedStatus === 'kosong'
+          ) return false;
+
+          const orderSessionId = String(order.table_session_id || '').trim();
+
+          if (tableSessionId || orderSessionId) {
+            return Boolean(
+              tableSessionId &&
+              orderSessionId &&
+              tableSessionId === orderSessionId
+            );
+          }
+
+          // Fallback untuk pesanan lama tanpa ID sesi.
+          return true;
+        })
         .sort((a, b) => {
           const dateA = getOrderDate(a.created_at)?.getTime() ?? 0;
           const dateB = getOrderDate(b.created_at)?.getTime() ?? 0;
           return dateA - dateB;
         });
 
-      return {
-        tableNumber,
-        orders: tableOrders,
-        occupied: tableOrders.length > 0
-      };
+      const validStoredStatus = ['terisi', 'perlu_dibersihkan', 'kosong'].includes(
+        storedStatus || ''
+      );
+      const statusKnown = Boolean(record && validStoredStatus);
+      const status = validStoredStatus
+        ? storedStatus!
+        : tableOrders.length > 0
+          ? 'terisi'
+          : 'perlu_dibersihkan';
+
+      return { tableNumber, tableName: record?.table_name || `Meja ${String(tableNumber).padStart(2, '0')}`, status, statusKnown, orders: tableOrders };
     });
-  }, [activeOrders]);
+  }, [tables, orders]);
 
   const occupiedTableCount = useMemo(
-    () => tableStatuses.filter(table => table.occupied).length,
+    () => tableStatuses.filter(table => table.status === 'terisi').length,
     [tableStatuses]
   );
 
-  const emptyTableCount = TOTAL_TABLES - occupiedTableCount;
+  const cleaningTableCount = useMemo(
+    () => tableStatuses.filter(table => table.status === 'perlu_dibersihkan').length,
+    [tableStatuses]
+  );
+
+  const emptyTableCount = useMemo(
+    () => tableStatuses.filter(table => table.status === 'kosong').length,
+    [tableStatuses]
+  );
 
   const unassignedActiveOrders = useMemo(
     () => activeOrders.filter(order => {
@@ -622,12 +724,12 @@ export default function KasirView() {
     if (
       activePage === 'pesanan' &&
       selectedOrder &&
-      !ACTIVE_STATUSES.includes(selectedOrder.status)
+      !activeOrders.some(order => order.id === selectedOrder.id)
     ) {
       setSelectedOrderId('');
       setShowDetail(true);
     }
-  }, [activePage, selectedOrder]);
+  }, [activePage, selectedOrder, activeOrders]);
 
   const toggleGroup = (key: string) => {
     setCollapsedGroups(previous => ({
@@ -636,37 +738,48 @@ export default function KasirView() {
     }));
   };
 
-  const changeStatus = async (orderId: string, status: string) => {
-    if (processingStatus) return;
+  const updateTableStatus = async (
+    tableNumber: number,
+    targetStatus: 'perlu_dibersihkan' | 'kosong'
+  ) => {
+    if (processingTableNumber !== null) return;
 
-    const order = orders.find(item => item.id === orderId);
-
-    if (!order) {
-      setError('Pesanan tidak ditemukan.');
-      return;
-    }
-
-    const allowedNextStatus: Record<string, string> = {
-      menunggu: 'diproses',
-      diproses: 'siap',
-      siap: 'selesai'
-    };
-
-    if (allowedNextStatus[order.status] !== status) {
-      setError('Perubahan status tidak sesuai urutan pelayanan pesanan.');
-      return;
-    }
-
-    setProcessingStatus(true);
+    setProcessingTableNumber(tableNumber);
     setError('');
 
     try {
-      await updateDoc(doc(db, 'orders', orderId), { status });
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error('Sesi login berakhir. Silakan login kembali.');
+      }
+
+      const idToken = await user.getIdToken();
+      const response = await fetch('/api/update-table-status', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          table_number: tableNumber,
+          table_status: targetStatus
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.success !== true) {
+        throw new Error(result.error || 'Gagal memperbarui status meja.');
+      }
+
+      setError('');
     } catch (err) {
-      console.error('Gagal memperbarui status:', err);
-      setError('Gagal memperbarui status pesanan.');
+      console.error('Gagal memperbarui status meja:', err);
+      setError(
+        err instanceof Error ? err.message : 'Gagal memperbarui status meja.'
+      );
     } finally {
-      setProcessingStatus(false);
+      setProcessingTableNumber(null);
     }
   };
 
@@ -764,7 +877,7 @@ export default function KasirView() {
         <div>
           <h1 className="text-2xl font-extrabold text-green-950">Status Meja</h1>
           <p className="mt-1 text-sm text-gray-500">
-            Pemantauan kondisi 50 meja berdasarkan pesanan yang masih aktif
+            Pemantauan dan pengaturan kondisi 50 meja oleh Kasir
           </p>
         </div>
         <span className="rounded-xl border border-green-100 bg-white px-4 py-2 text-xs font-bold text-green-900">
@@ -772,16 +885,27 @@ export default function KasirView() {
         </span>
       </div>
 
-      <div className="mb-5 grid grid-cols-2 gap-3">
+      <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-green-500" />
             <p className="text-xs font-bold text-gray-500">MEJA KOSONG</p>
           </div>
           <p className="mt-2 text-3xl font-extrabold text-green-800">
-            {loading ? '—' : emptyTableCount}
+            {tableLoading ? '—' : emptyTableCount}
           </p>
-          <p className="mt-1 text-xs text-gray-400">Siap digunakan</p>
+          <p className="mt-1 text-xs text-gray-400">Siap menerima pesanan QR</p>
+        </div>
+
+        <div className="rounded-2xl border border-amber-100 bg-white p-4 shadow-sm">
+          <div className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded-full bg-amber-500" />
+            <p className="text-xs font-bold text-gray-500">PERLU DIBERSIHKAN</p>
+          </div>
+          <p className="mt-2 text-3xl font-extrabold text-amber-700">
+            {tableLoading ? '—' : cleaningTableCount}
+          </p>
+          <p className="mt-1 text-xs text-gray-400">Perlu dibersihkan sebelum meja digunakan kembali</p>
         </div>
 
         <div className="rounded-2xl border border-red-100 bg-white p-4 shadow-sm">
@@ -790,30 +914,33 @@ export default function KasirView() {
             <p className="text-xs font-bold text-gray-500">MEJA TERISI</p>
           </div>
           <p className="mt-2 text-3xl font-extrabold text-red-700">
-            {loading ? '—' : occupiedTableCount}
+            {tableLoading ? '—' : occupiedTableCount}
           </p>
-          <p className="mt-1 text-xs text-gray-400">Masih ada pesanan aktif</p>
+          <p className="mt-1 text-xs text-gray-400">Menunggu pelanggan menyelesaikan kunjungan</p>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-4 rounded-xl border border-gray-100 bg-white p-3 text-xs font-semibold text-gray-600">
+      <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-2xl border border-green-100 bg-white p-4 text-xs font-semibold text-gray-700">
         <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded bg-green-500" />
           Kosong
         </span>
         <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded bg-amber-500" />
+          Perlu dibersihkan
+        </span>
+        <span className="flex items-center gap-2">
           <span className="h-3 w-3 rounded bg-red-500" />
           Terisi
         </span>
-        <span className="text-gray-400">Status mengikuti pesanan aktif</span>
       </div>
 
-      {loading ? (
+      {tableLoading ? (
         <div className="rounded-2xl border border-gray-100 bg-white p-10 text-center text-sm text-gray-500">
           Memuat status meja...
         </div>
       ) : (
-        <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-md">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-lg font-extrabold text-gray-900">Denah Status Meja</h2>
@@ -824,70 +951,77 @@ export default function KasirView() {
             </span>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
-            {tableStatuses.map(table => (
-              <div
-                key={table.tableNumber}
-                className={`min-w-0 rounded-xl border p-3 ${
-                  table.occupied
-                    ? 'border-red-200 bg-red-50'
-                    : 'border-green-200 bg-green-50'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-1">
-                  <span className={`text-xs font-bold ${
-                    table.occupied ? 'text-red-700' : 'text-green-700'
-                  }`}>
-                    MEJA
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
+            {tableStatuses.map(table => {
+              const isOccupied = table.status === 'terisi';
+              const needsCleaning = table.status === 'perlu_dibersihkan';
+              const isEmpty = table.status === 'kosong';
+
+              const colorClass = isOccupied
+                ? 'border-red-300 bg-red-100 text-red-900'
+                : needsCleaning
+                  ? 'border-amber-300 bg-amber-100 text-amber-900'
+                  : 'border-green-300 bg-green-100 text-green-900';
+
+              const record = tables.find(
+                item => Number(item.table_number ?? item.Table_number) === table.tableNumber
+              );
+
+              const tableName = record?.table_name ||
+                `Meja ${String(table.tableNumber).padStart(2, '0')}`;
+
+              const handleTableClick = () => {
+                if (!table.statusKnown || processingTableNumber !== null) return;
+
+                if (isOccupied) {
+                  if (window.confirm(
+                    `Pelanggan meja ${String(table.tableNumber).padStart(2, '0')} sudah selesai dan meninggalkan meja?`
+                  )) {
+                    void updateTableStatus(table.tableNumber, 'perlu_dibersihkan');
+                  }
+                  return;
+                }
+
+                if (needsCleaning) {
+                  if (window.confirm(
+                    `Meja ${String(table.tableNumber).padStart(2, '0')} sudah dibersihkan dan siap digunakan kembali?`
+                  )) {
+                    void updateTableStatus(table.tableNumber, 'kosong');
+                  }
+                }
+              };
+
+              return (
+                <button
+                  key={table.tableNumber}
+                  type="button"
+                  disabled={
+                    processingTableNumber !== null ||
+                    !table.statusKnown ||
+                    isEmpty
+                  }
+                  aria-label={`${tableName}, nomor ${table.tableNumber}, status ${
+                    isOccupied ? 'terisi' : needsCleaning ? 'perlu dibersihkan' : 'kosong'
+                  }`}
+                  aria-busy={processingTableNumber === table.tableNumber}
+                  onClick={handleTableClick}
+                  className={`aspect-square w-full min-w-0 rounded-2xl border-2 p-2 flex flex-col items-center justify-center gap-2 text-center shadow-sm transition ${
+                    colorClass
+                  } ${
+                    !table.statusKnown || isEmpty || processingTableNumber !== null
+                      ? 'cursor-not-allowed opacity-80'
+                      : 'cursor-pointer hover:brightness-95 active:scale-95'
+                  }`}
+                >
+                  <span className="text-2xl font-extrabold leading-none">
+                    {String(table.tableNumber).padStart(2, '0')}
                   </span>
-                  <span className={`h-2.5 w-2.5 rounded-full ${
-                    table.occupied ? 'bg-red-500' : 'bg-green-500'
-                  }`} />
-                </div>
-
-                <p className={`my-2 text-2xl font-extrabold ${
-                  table.occupied ? 'text-red-800' : 'text-green-800'
-                }`}>
-                  {String(table.tableNumber).padStart(2, '0')}
-                </p>
-
-                <span className={`inline-block rounded-full px-2 py-1 text-[10px] font-extrabold ${
-                  table.occupied
-                    ? 'bg-red-100 text-red-800'
-                    : 'bg-green-100 text-green-800'
-                }`}>
-                  {table.occupied ? 'TERISI' : 'KOSONG'}
-                </span>
-
-                {table.occupied && (
-                  <div className="mt-3 space-y-2 border-t border-red-200 pt-2">
-                    <p className="text-[10px] font-bold text-red-800">
-                      {table.orders.length} PESANAN AKTIF
-                    </p>
-                    {table.orders.map(order => (
-                      <div key={order.id} className="min-w-0">
-                        <p className="break-words text-xs font-extrabold text-gray-800">
-                          {order.order_code || 'Tanpa nomor'}
-                        </p>
-                        <p className="break-words text-[11px] text-gray-600">
-                          {order.customer_name || 'Pelanggan'}
-                        </p>
-                        <p className="mt-1 text-[10px] font-bold text-red-700">
-                          {statusLabels[order.status] || order.status}
-                        </p>
-                        <p className={`text-[10px] font-semibold ${
-                          order.payment_status === 'lunas'
-                            ? 'text-green-700'
-                            : 'text-amber-700'
-                        }`}>
-                          {order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+                  <span className="max-w-full break-words text-xs font-bold leading-tight">
+                    {tableName}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -919,15 +1053,16 @@ export default function KasirView() {
       <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
         <p className="text-xs font-extrabold text-blue-900">INFORMASI STATUS MEJA</p>
         <p className="mt-1 text-xs leading-relaxed text-blue-800">
-          Meja baru dianggap kosong apabila tidak memiliki pesanan berstatus
-          Pesanan Baru, Diproses, atau Siap Disajikan. Pembayaran LUNAS tidak
-          otomatis mengubah status meja. Halaman ini hanya untuk pemantauan,
-          bukan untuk mengubah status pesanan.
+          Meja TERISI tidak menerima pesanan QR baru, termasuk setelah pembayaran
+          LUNAS. Setelah pelanggan meninggalkan meja, Kasir menandainya PERLU
+          DIBERSIHKAN. Setelah dibersihkan, Kasir wajib mengonfirmasi menjadi
+          KOSONG agar QR dapat digunakan kembali. Pembayaran dan kondisi meja
+          merupakan dua hal yang terpisah.
         </p>
       </div>
     </>
   );
-  
+
   const renderOrderList = (
     groups: OrderGroup[],
     mode: 'active' | 'history' | 'dashboard'
@@ -1007,8 +1142,14 @@ export default function KasirView() {
                           <p className="text-sm font-extrabold text-gray-900">
                             {rupiah(Number(order.total_amount || 0))}
                           </p>
-                          <span className={`mt-2 inline-block rounded-full px-2 py-1 text-[10px] font-bold ${statusColor(order.status)}`}>
-                            {statusLabels[order.status] || order.status}
+                          <span className="mt-2 inline-block rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold text-gray-700">
+                            {activeOrders.some(item => item.id === order.id)
+                              ? ({
+                                  terisi: 'MEJA TERISI',
+                                  perlu_dibersihkan: 'PERLU DIBERSIHKAN',
+                                  kosong: 'KOSONG'
+                                }[tableStatuses.find(item => item.tableNumber === Number(order.table_number))?.status || 'terisi'])
+                              : 'RIWAYAT'}
                           </span>
                         </div>
                       </div>
@@ -1095,8 +1236,14 @@ export default function KasirView() {
         </div>
 
         <div className="mb-4 flex flex-wrap gap-2">
-          <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusColor(selectedOrder.status)}`}>
-            {statusLabels[selectedOrder.status] || selectedOrder.status}
+          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
+            {activeOrders.some(order => order.id === selectedOrder.id)
+              ? ({
+                  terisi: 'MEJA TERISI',
+                  perlu_dibersihkan: 'PERLU DIBERSIHKAN',
+                  kosong: 'KOSONG'
+                }[tableStatuses.find(item => item.tableNumber === Number(selectedOrder.table_number))?.status || 'terisi'])
+              : 'RIWAYAT'}
           </span>
           <span className={`rounded-full px-3 py-1 text-xs font-bold ${
             selectedOrder.payment_status === 'lunas'
@@ -1146,7 +1293,7 @@ export default function KasirView() {
           </span>
         </div>
 
-        {activePage === 'pesanan' && ACTIVE_STATUSES.includes(selectedOrder.status) && (
+        {activePage === 'pesanan' && activeOrders.some(order => order.id === selectedOrder.id) && (
           <div className="mt-5 space-y-3">
             {selectedOrder.payment_status !== 'lunas' ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
@@ -1197,43 +1344,11 @@ export default function KasirView() {
                   PEMBAYARAN SUDAH LUNAS
                 </p>
                 <p className="mt-1 text-xs text-green-700">
-                  Status pelayanan pesanan tetap harus diselesaikan sesuai urutan.
+                  Pembayaran telah dicatat. Kondisi meja tetap mengikuti Panel Status Meja.
                 </p>
               </div>
             )}
 
-            {selectedOrder.status === 'menunggu' && (
-              <button
-                type="button"
-                disabled={processingStatus}
-                onClick={() => changeStatus(selectedOrder.id, 'diproses')}
-                className="w-full rounded-xl bg-blue-700 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
-              >
-                {processingStatus ? 'Memproses...' : 'MULAI PROSES PESANAN'}
-              </button>
-            )}
-
-            {selectedOrder.status === 'diproses' && (
-              <button
-                type="button"
-                disabled={processingStatus}
-                onClick={() => changeStatus(selectedOrder.id, 'siap')}
-                className="w-full rounded-xl bg-emerald-700 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
-              >
-                {processingStatus ? 'Memproses...' : 'SIAP DISAJIKAN'}
-              </button>
-            )}
-
-            {selectedOrder.status === 'siap' && (
-              <button
-                type="button"
-                disabled={processingStatus}
-                onClick={() => changeStatus(selectedOrder.id, 'selesai')}
-                className="w-full rounded-xl bg-green-800 px-4 py-3 text-sm font-extrabold text-white disabled:opacity-50"
-              >
-                {processingStatus ? 'Memproses...' : 'SELESAIKAN PESANAN'}
-              </button>
-            )}
           </div>
         )}
 
@@ -1282,9 +1397,6 @@ export default function KasirView() {
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
-          <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusColor(selectedOrder.status)}`}>
-            {statusLabels[selectedOrder.status] || selectedOrder.status}
-          </span>
           <span className={`rounded-full px-3 py-1 text-xs font-bold ${
             selectedOrder.payment_status === 'lunas'
               ? 'bg-green-100 text-green-800'
@@ -1494,7 +1606,7 @@ export default function KasirView() {
         ) : (
           <div className="divide-y divide-gray-100">
             {reportData.transactions.map(order => (
-              <div key={order.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div key={order.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                 <div className="min-w-0">
                   <p className="break-words text-sm font-extrabold text-gray-800">
                     {order.order_code}
@@ -1626,7 +1738,7 @@ export default function KasirView() {
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 p-4">
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
           <div className="rounded-xl bg-green-50 p-3">
             <p className="text-[10px] font-bold text-green-700">JUMLAH TRANSAKSI</p>
             <p className="mt-1 text-2xl font-extrabold text-green-900">
@@ -1654,7 +1766,7 @@ export default function KasirView() {
           <div className="divide-y divide-gray-100">
             {cashierPaymentHistory.map(order => (
               <div key={order.id} className="p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                   <div className="min-w-0">
                     <p className="break-words text-sm font-extrabold text-gray-800">
                       {order.order_code}
@@ -1782,8 +1894,8 @@ export default function KasirView() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="mx-auto flex min-h-screen max-w-[1600px] gap-0 p-0 lg:gap-4 lg:p-4">
+    <div className="min-h-screen bg-[#f3f8f4]">
+      <div className="mx-auto flex min-h-screen max-w-[1600px] gap-0 p-0 lg:gap-5 lg:p-5">
         {mobileSidebarOpen && (
           <button
             type="button"
@@ -1794,31 +1906,37 @@ export default function KasirView() {
         )}
 
         <aside
-          className={`fixed inset-y-0 left-0 z-50 flex w-72 shrink-0 flex-col border-r border-gray-100 bg-white p-4 shadow-xl transition-transform duration-200 lg:sticky lg:top-4 lg:z-auto lg:h-[calc(100vh-2rem)] lg:w-56 lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
+          className={`fixed inset-y-0 left-0 z-50 flex w-72 shrink-0 flex-col border-r border-green-100 bg-white p-5 shadow-2xl transition-transform duration-200 lg:sticky lg:top-4 lg:z-auto lg:h-[calc(100vh-2rem)] lg:w-56 lg:translate-x-0 lg:rounded-2xl lg:border lg:shadow-sm ${
             mobileSidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
-          <div className="mb-5 flex items-center justify-between border-b border-gray-100 pb-4">
-            <div>
-              <p className="text-[10px] font-extrabold tracking-[0.18em] text-green-700">
-                WAROENG BPJS
-              </p>
-              <h2 className="mt-1 text-lg font-extrabold text-gray-900">
-                Panel Kasir
-              </h2>
-              <p className="mt-1 text-[10px] text-gray-500">
-                Sistem pengelolaan pesanan
-              </p>
+          <div className="mb-5 border-b border-green-100 pb-4">
+            <div className="flex items-center gap-3">
+              <img
+                src="/logo.png"
+                alt="Logo Waroeng BPJS"
+                className="h-14 w-14 shrink-0 object-contain"
+              />
+              <div className="min-w-0 flex-1 text-center">
+                <p className="text-sm font-extrabold tracking-wide text-green-900">
+                  WAROENG BPJS
+                </p>
+                <p className="mt-1 text-[10px] font-semibold text-green-700">
+                  Budget pas jajanan sehat
+                </p>
+              </div>
+              <button
+                type="button"
+                aria-label="Tutup menu"
+                onClick={() => setMobileSidebarOpen(false)}
+                className="rounded-lg px-3 py-2 text-xl text-gray-500 hover:bg-gray-100 lg:hidden"
+              >
+                ×
+              </button>
             </div>
-
-            <button
-              type="button"
-              aria-label="Tutup menu"
-              onClick={() => setMobileSidebarOpen(false)}
-              className="rounded-lg px-3 py-2 text-xl text-gray-500 hover:bg-gray-100 lg:hidden"
-            >
-              ×
-            </button>
+            <p className="mt-3 text-center text-xs font-extrabold text-green-800">
+              PANEL KASIR
+            </p>
           </div>
 
           <nav className="flex-1 space-y-1.5 overflow-y-auto">
@@ -1827,27 +1945,23 @@ export default function KasirView() {
                 type="button"
                 key={item.id}
                 onClick={() => {
+                  setMobileSidebarOpen(false);
+                  if (item.id === 'keluar') {
+                    onLogout();
+                    return;
+                  }
                   setActivePage(item.id);
                   setSelectedOrderId('');
                   setSearch('');
                   setError('');
-                  setMobileSidebarOpen(false);
                   setNotificationOpen(false);
                 }}
-                className={`flex w-full min-w-0 items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
+                className={`flex w-full min-w-0 items-center rounded-xl px-3 py-3 text-left transition ${
                   activePage === item.id
                     ? 'bg-green-800 text-white shadow-sm'
-                    : 'text-gray-700 hover:bg-green-50'
+                    : 'text-gray-800 hover:bg-green-50'
                 }`}
               >
-                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sm font-extrabold ${
-                  activePage === item.id
-                    ? 'bg-white/15 text-white'
-                    : 'bg-green-50 text-green-800'
-                }`}>
-                  {item.icon}
-                </span>
-
                 <span className="min-w-0">
                   <span className="block text-xs font-extrabold">
                     {item.label}
@@ -1873,7 +1987,7 @@ export default function KasirView() {
         </aside>
 
         <main className="min-w-0 flex-1 p-3 sm:p-5 lg:p-0">
-          <header className="relative z-30 mb-5 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-none border-b border-gray-100 bg-white p-3 shadow-sm sm:rounded-2xl sm:border sm:p-4 lg:rounded-2xl">
+          <header className="relative z-30 mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-2xl border border-green-200 bg-white p-3 shadow-md sm:p-4">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -1922,7 +2036,7 @@ export default function KasirView() {
               <div className="relative">
                 <button
                   type="button"
-                  aria-label="Notifikasi pesanan baru"
+                  aria-label="Notifikasi tagihan belum lunas"
                   aria-expanded={notificationOpen}
                   onClick={() => setNotificationOpen(value => !value)}
                   className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-lg text-gray-700 hover:bg-green-50"
@@ -1940,10 +2054,10 @@ export default function KasirView() {
                     <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
                       <div>
                         <p className="text-sm font-extrabold text-gray-900">
-                          Pesanan Menunggu
+                          Tagihan Belum Lunas
                         </p>
                         <p className="text-[10px] text-gray-500">
-                          {pendingOrders.length} pesanan belum diproses
+                          {pendingOrders.length} tagihan sesi meja belum lunas
                         </p>
                       </div>
                       <span className="rounded-full bg-red-50 px-2 py-1 text-xs font-extrabold text-red-700">
@@ -1954,7 +2068,7 @@ export default function KasirView() {
                     <div className="max-h-80 overflow-y-auto">
                       {pendingOrders.length === 0 ? (
                         <p className="px-4 py-8 text-center text-xs text-gray-500">
-                          Tidak ada pesanan yang menunggu.
+                          Tidak ada tagihan aktif yang belum lunas.
                         </p>
                       ) : (
                         pendingOrders.map(order => (
@@ -1976,7 +2090,7 @@ export default function KasirView() {
                                 {order.order_code || 'Pesanan baru'}
                               </span>
                               <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-bold text-amber-800">
-                                MENUNGGU
+                                BELUM LUNAS
                               </span>
                             </div>
                             <p className="mt-1 truncate text-xs font-semibold text-gray-800">
@@ -2048,40 +2162,30 @@ export default function KasirView() {
 
           {activePage === 'dashboard' && (
             <>
-              <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
-                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <p className="text-xs font-bold text-gray-500">TOTAL PESANAN</p>
-                  <p className="mt-2 text-2xl font-extrabold text-gray-900">
-                    {loading ? '—' : summary.totalOrders}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <p className="text-xs font-bold text-gray-500">PESANAN DIPROSES</p>
-                  <p className="mt-2 text-2xl font-extrabold text-blue-700">
-                    {loading ? '—' : summary.processingCount}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <p className="text-xs font-bold text-gray-500">SUDAH LUNAS</p>
-                  <p className="mt-2 text-2xl font-extrabold text-green-700">
+              <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4">
+                <div className="rounded-2xl border border-green-200 bg-white p-4 shadow-sm sm:p-5">
+                  <p className="text-xs font-bold tracking-wide text-gray-500">SUDAH LUNAS</p>
+                  <p className="mt-2 text-3xl font-extrabold text-green-700">
                     {loading ? '—' : summary.paidCount}
                   </p>
+                  <p className="mt-1 text-xs text-gray-500">Pesanan telah dibayar</p>
                 </div>
-                <div className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
-                  <p className="text-xs font-bold text-gray-500">BELUM LUNAS</p>
-                  <p className="mt-2 text-2xl font-extrabold text-amber-700">
+                <div className="rounded-2xl border border-amber-200 bg-white p-4 shadow-sm sm:p-5">
+                  <p className="text-xs font-bold tracking-wide text-gray-500">BELUM LUNAS</p>
+                  <p className="mt-2 text-3xl font-extrabold text-amber-700">
                     {loading ? '—' : summary.unpaidCount}
                   </p>
+                  <p className="mt-1 text-xs text-gray-500">Menunggu pembayaran</p>
                 </div>
               </div>
 
-              <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl bg-green-800 p-5 text-white shadow-sm">
+              <div className="mb-5 grid grid-cols-2 gap-3 sm:gap-4">
+                <div className="rounded-2xl border border-green-800 bg-green-800 p-4 text-white shadow-md sm:p-5">
                   <p className="text-xs font-bold text-green-100">TOTAL PEMASUKAN TERCATAT</p>
                   <p className="mt-2 text-2xl font-extrabold">{rupiah(summary.totalIncome)}</p>
                   <p className="mt-1 text-xs text-green-100">Pembayaran berstatus lunas</p>
                 </div>
-                <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:p-5">
                   <p className="text-xs font-bold text-gray-500">TOTAL TAGIHAN BELUM LUNAS</p>
                   <p className="mt-2 text-2xl font-extrabold text-amber-700">
                     {rupiah(summary.unpaidAmount)}
@@ -2090,7 +2194,7 @@ export default function KasirView() {
                 </div>
               </div>
 
-              <div className="mb-5 rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+              <div className="mb-5 rounded-2xl border border-green-100 bg-white p-4 shadow-md sm:p-5">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="font-extrabold text-gray-900">Pesanan Terbaru</h2>
@@ -2134,13 +2238,13 @@ export default function KasirView() {
 
           {activePage === 'pesanan' && (
             <>
-              <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                 {[
-                  { label: 'PESANAN BARU', value: activeOrders.filter(order => order.status === 'menunggu').length, color: 'text-amber-700' },
-                  { label: 'DIPROSES', value: activeOrders.filter(order => order.status === 'diproses').length, color: 'text-blue-700' },
-                  { label: 'SIAP DISAJIKAN', value: activeOrders.filter(order => order.status === 'siap').length, color: 'text-green-700' }
+                  { label: 'MEJA TERISI', value: occupiedTableCount, color: 'text-red-700' },
+                  { label: 'PERLU DIBERSIHKAN', value: cleaningTableCount, color: 'text-amber-700' },
+                  { label: 'TAGIHAN BELUM LUNAS', value: pendingOrders.length, color: 'text-blue-700' }
                 ].map(item => (
-                  <div key={item.label} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+                  <div key={item.label} className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm sm:p-5">
                     <p className="text-[10px] font-bold text-gray-500">{item.label}</p>
                     <p className={`mt-2 text-2xl font-extrabold ${item.color}`}>
                       {loading ? '—' : item.value}
@@ -2149,12 +2253,12 @@ export default function KasirView() {
                 ))}
               </div>
 
-              <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5">
                 <section className="min-w-0">
                   <div className="mb-3">
                     <h2 className="font-extrabold text-gray-900">Daftar Pesanan Aktif</h2>
                     <p className="mt-1 text-xs text-gray-500">
-                      Pesanan baru, sedang diproses, dan siap disajikan.
+                      Pesanan dari sesi meja yang masih aktif.
                     </p>
                   </div>
                   <input
@@ -2162,7 +2266,7 @@ export default function KasirView() {
                     value={search}
                     onChange={event => setSearch(event.target.value)}
                     placeholder="Cari nomor / nama pelanggan..."
-                    className="mb-4 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm"
+                    className="mb-4 w-full rounded-xl border border-green-100 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-green-500 focus:ring-2 focus:ring-green-100"
                   />
                   {loading ? (
                     <div className="rounded-xl bg-white p-6 text-center text-sm text-gray-500">
@@ -2209,7 +2313,7 @@ export default function KasirView() {
                 className="mb-4 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm"
               />
 
-              <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-2">
+              <div className="grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-2">
                 <section className="min-w-0">
                   {loading ? (
                     <div className="rounded-xl bg-white p-6 text-center text-sm text-gray-500">
