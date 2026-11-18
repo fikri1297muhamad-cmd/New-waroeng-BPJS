@@ -38,6 +38,51 @@ type GeneratedQrResponse = {
   error?: string;
 };
 
+type PreviewTableOrder = {
+  order_id: string;
+  order_code: string | null;
+  status: string | null;
+  payment_status: string | null;
+  table_session_id: string;
+};
+
+type PreviewTable = {
+  table_number: number;
+  table_name: string;
+  document_exists: boolean;
+  is_active: boolean | null;
+  current_status: string | null;
+  active_order_count: number;
+  active_orders: PreviewTableOrder[];
+  current_table_session_id: string | null;
+  order_session_ids: string[];
+  session_conflict: boolean;
+  status_mismatch: boolean;
+  recommended_status: string;
+  needs_initialization: boolean;
+};
+
+type TablePreviewResponse = {
+  success: boolean;
+  mode: string;
+  message: string;
+  error?: string;
+  summary: {
+    total_tables: number;
+    existing_documents: number;
+    missing_documents: number;
+    missing_status: number;
+    occupied_recommendations: number;
+    cleaning_recommendations: number;
+    empty_current_status: number;
+    active_orders_total: number;
+    session_conflicts: number;
+    status_mismatches: number;
+    inactive_tables: number;
+  };
+  tables: PreviewTable[];
+};
+
 type OrderStatus =
   | 'menunggu'
   | 'diproses'
@@ -164,6 +209,9 @@ export default function AdminView() {
   const [saving, setSaving] = useState(false);
   const [seedingTables, setSeedingTables] = useState(false);
   const [seedMessage, setSeedMessage] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResult, setPreviewResult] = useState<TablePreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState('');
   const [editingMenu, setEditingMenu] = useState<MenuItem | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState('');
 
@@ -476,6 +524,46 @@ export default function AdminView() {
       );
     } finally {
       setSeedingTables(false);
+    }
+  };
+
+  const previewTableMigration = async () => {
+    setPreviewLoading(true);
+    setPreviewError('');
+    setPreviewResult(null);
+
+    try {
+      const user = getAuth().currentUser;
+
+      if (!user) {
+        throw new Error('Silakan login sebagai Admin terlebih dahulu.');
+      }
+
+      const token = await user.getIdToken(true);
+
+      const response = await fetch('/api/preview-table-migration', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Gagal membaca pratinjau status meja.');
+      }
+
+      setPreviewResult(result as TablePreviewResponse);
+    } catch (err) {
+      setPreviewError(
+        err instanceof Error
+          ? err.message
+          : 'Gagal membaca pratinjau status meja.'
+      );
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -1502,6 +1590,103 @@ export default function AdminView() {
                 <p className="mt-3 break-words rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">
                   {seedMessage}
                 </p>
+              )}
+
+              <button
+                type="button"
+                onClick={previewTableMigration}
+                disabled={previewLoading}
+                className={`${buttonClass} mt-3 border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100`}
+              >
+                {previewLoading ? 'Membaca Status 50 Meja...' : 'Preview Status 50 Meja'}
+              </button>
+
+              {previewError && (
+                <p className="mt-3 break-words rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-800">
+                  {previewError}
+                </p>
+              )}
+
+              {previewResult && (
+                <div className="mt-4 space-y-4">
+                  <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900">
+                    {previewResult.message}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {[
+                      ['Total Meja', previewResult.summary.total_tables],
+                      ['Dokumen Tersedia', previewResult.summary.existing_documents],
+                      ['Dokumen Belum Ada', previewResult.summary.missing_documents],
+                      ['Status Belum Diatur', previewResult.summary.missing_status],
+                      ['Rekomendasi Terisi', previewResult.summary.occupied_recommendations],
+                      ['Rekomendasi Dibersihkan', previewResult.summary.cleaning_recommendations],
+                      ['Pesanan Aktif', previewResult.summary.active_orders_total],
+                      ['Konflik Sesi', previewResult.summary.session_conflicts],
+                      ['Status Tidak Cocok', previewResult.summary.status_mismatches],
+                      ['Meja Nonaktif', previewResult.summary.inactive_tables]
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-slate-200 bg-white p-3">
+                        <p className="text-xs leading-relaxed text-slate-500">{label}</p>
+                        <p className="mt-1 text-xl font-bold text-slate-900">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="space-y-2">
+                    <h3 className="font-bold text-slate-800">Rincian Rekomendasi 50 Meja</h3>
+
+                    {previewResult.tables.map((table) => (
+                      <article
+                        key={table.table_number}
+                        className="rounded-lg border border-slate-200 bg-white p-3"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h4 className="font-bold text-slate-900">
+                            Meja {String(table.table_number).padStart(2, '0')}
+                          </h4>
+                          <span className="text-xs text-slate-500">
+                            {table.document_exists ? 'Dokumen tersedia' : 'Dokumen belum ada'}
+                          </span>
+                        </div>
+
+                        <div className="mt-2 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
+                          <p className="text-slate-600">
+                            Status sekarang: <strong>{table.current_status || 'Belum diatur'}</strong>
+                          </p>
+                          <p className="text-slate-600">
+                            Rekomendasi: <strong>{table.recommended_status}</strong>
+                          </p>
+                          <p className="text-slate-600">
+                            Pesanan aktif: <strong>{table.active_order_count}</strong>
+                          </p>
+                          <p className="text-slate-600">
+                            Meja aktif: <strong>{table.is_active === null ? 'Belum diketahui' : table.is_active ? 'Ya' : 'Tidak'}</strong>
+                          </p>
+                        </div>
+
+                        {table.active_orders.length > 0 && (
+                          <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+                            {table.active_orders.map((order, index) => (
+                              <p key={`${order.order_id}-${index}`} className="break-words text-xs text-slate-600">
+                                {order.order_code || order.order_id} · {order.status || '-'} · Pembayaran: {order.payment_status || '-'}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {(table.session_conflict || table.status_mismatch) && (
+                          <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs font-semibold text-amber-800">
+                            {[
+                              table.session_conflict ? 'Terdapat konflik sesi meja.' : '',
+                              table.status_mismatch ? 'Status sekarang tidak cocok dengan pesanan aktif.' : ''
+                            ].filter(Boolean).join(' ')}
+                          </p>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                </div>
               )}
             </section>
 
