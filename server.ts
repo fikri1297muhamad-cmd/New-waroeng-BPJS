@@ -1,5 +1,7 @@
 import express from 'express';
 import updateTableStatusHandler from './api/update-table-status.ts';
+import recordPaymentHandler from './api/record-payment.ts';
+import previewTableMigrationHandler from './api/preview-table-migration.ts';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { Request, Response } from 'express';
 
@@ -15,6 +17,36 @@ app.post('/api/update-table-status', (req: Request, res: Response) => {
 });
 
 app.all('/api/update-table-status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/record-payment', (req: Request, res: Response) => {
+  void recordPaymentHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+
+app.all('/api/record-payment', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/preview-table-migration', (req: Request, res: Response) => {
+  void previewTableMigrationHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+
+app.all('/api/preview-table-migration', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store, private');
   res.status(405).json({
     success: false,

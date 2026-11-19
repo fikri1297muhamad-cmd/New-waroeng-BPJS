@@ -136,7 +136,39 @@ export default async function handler(
         throw new Error('MEJA_TIDAK_AKTIF');
       }
 
-      const currentStatus = table?.table_status;
+      const storedStatus = String(table?.table_status ?? '').trim();
+      let currentStatus = ['terisi', 'perlu_dibersihkan', 'kosong'].includes(storedStatus)
+        ? storedStatus
+        : '';
+
+      if (!currentStatus) {
+        const tableOrdersSnapshot = await transaction.get(
+          db.collection('orders').where('table_number', '==', tableNumber)
+        );
+
+        const inferenceSessionId = String(table?.table_session_id || '').trim();
+
+        const hasCurrentSessionOrders = tableOrdersSnapshot.docs.some(orderDoc => {
+          const order = orderDoc.data();
+          if (order.cashier_archived_at) return false;
+
+          const orderSessionId = String(order.table_session_id || '').trim();
+
+          if (inferenceSessionId || orderSessionId) {
+            return Boolean(
+              inferenceSessionId &&
+              orderSessionId &&
+              inferenceSessionId === orderSessionId
+            );
+          }
+
+          return true;
+        });
+
+        currentStatus = hasCurrentSessionOrders
+          ? 'terisi'
+          : 'perlu_dibersihkan';
+      }
 
       const validTransition =
         (currentStatus === 'terisi' &&

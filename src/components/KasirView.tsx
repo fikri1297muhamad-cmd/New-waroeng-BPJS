@@ -521,7 +521,7 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
       const validStoredStatus = ['terisi', 'perlu_dibersihkan', 'kosong'].includes(
         storedStatus || ''
       );
-      const statusKnown = Boolean(record && validStoredStatus);
+      const statusKnown = Boolean(record);
       const status = validStoredStatus
         ? storedStatus!
         : tableOrders.length > 0
