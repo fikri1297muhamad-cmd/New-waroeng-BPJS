@@ -1,4 +1,5 @@
 import express from 'express';
+import adminAccessHandler from './api/admin-access.ts';
 import updateTableStatusHandler from './api/update-table-status.ts';
 import recordPaymentHandler from './api/record-payment.ts';
 import previewTableMigrationHandler from './api/preview-table-migration.ts';
@@ -52,6 +53,18 @@ app.all('/api/preview-table-migration', (_req, res) => {
     success: false,
     error: 'Metode tidak diizinkan.'
   });
+});
+
+app.post('/api/admin-access', (req: Request, res: Response) => {
+  void adminAccessHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+
+app.all('/api/admin-access', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({ error: 'Metode tidak diizinkan.' });
 });
 
 const port = Number(process.env.LOCAL_API_PORT || 3001);

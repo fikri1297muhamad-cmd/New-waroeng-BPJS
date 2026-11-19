@@ -1,6 +1,6 @@
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { deleteDoc, doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import StaffLogin from './components/StaffLogin';
 import AdminView from './components/AdminView';
@@ -285,6 +285,14 @@ export default function App() {
   };
 
   const handleStaffLogout = async () => {
+    const user = auth.currentUser;
+    if (user) {
+      try {
+        await deleteDoc(doc(db, 'cashier_presence', user.uid));
+      } catch (error) {
+        console.error('Gagal menghapus status kehadiran kasir:', error);
+      }
+    }
     await signOut(auth);
     setStaffRole(null);
     setStaffName('');
@@ -399,7 +407,52 @@ export default function App() {
       active = false;
       unsubscribe();
     };
+
   }, [isLoginPath]);
+
+  // Kehadiran kasir: heartbeat setiap 15 detik.
+  useEffect(() => {
+    if (staffRole !== 'kasir') return;
+
+    let heartbeat: number | undefined;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (heartbeat !== undefined) {
+        window.clearInterval(heartbeat);
+        heartbeat = undefined;
+      }
+
+      if (!user) return;
+
+      const presenceRef = doc(db, 'cashier_presence', user.uid);
+      let hasReportedPresenceError = false;
+
+      const publishPresence = () => {
+        void setDoc(presenceRef, {
+          full_name: staffName,
+          lastSeen: serverTimestamp()
+        }).catch((error) => {
+          console.error('Gagal memperbarui kehadiran kasir:', error);
+          if (!hasReportedPresenceError) {
+            hasReportedPresenceError = true;
+            const detail = error instanceof Error ? error.message : String(error);
+            window.alert('Gagal menyimpan kehadiran kasir: ' + detail);
+          }
+        });
+      };
+
+      publishPresence();
+      heartbeat = window.setInterval(publishPresence, 15000);
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (heartbeat !== undefined) {
+        window.clearInterval(heartbeat);
+      }
+    };
+  }, [staffRole, staffName]);
+
 
   useEffect(() => {
     const unsubscribe = listenToMenus(

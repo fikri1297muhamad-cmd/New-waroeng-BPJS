@@ -45,6 +45,33 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Status kehadiran kasir.
+    match /cashier_presence/{userId} {
+      function isOwnCashier() {
+        return signedIn()
+          && request.auth.uid == userId
+          && exists(
+            /databases/$(database)/documents/staff_profiles/$(userId)
+          )
+          && get(
+            /databases/$(database)/documents/staff_profiles/$(userId)
+          ).data.role == 'kasir';
+      }
+
+      allow read: if isAdmin();
+
+      allow create, update: if isOwnCashier()
+        && request.resource.data.keys().hasAll(['full_name', 'lastSeen'])
+        && request.resource.data.keys().hasOnly(['full_name', 'lastSeen'])
+        && request.resource.data.full_name
+          == get(
+            /databases/$(database)/documents/staff_profiles/$(userId)
+          ).data.full_name
+        && request.resource.data.lastSeen is timestamp;
+
+      allow delete: if isOwnCashier();
+    }
+
     // Banner dapat dibaca pelanggan.
     // Hanya Admin yang boleh mengelola banner.
     match /banners/{bannerId} {

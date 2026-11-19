@@ -110,7 +110,16 @@ type AdminOrder = {
   payment_method?: string;
   total_amount: number;
   created_at: Date;
+  table_session_id?: string;
+  cashier_archived_at?: any;
   items: AdminOrderItem[];
+};
+
+type LiveTableRecord = {
+  table_number: number;
+  table_name: string;
+  table_status?: string;
+  table_session_id?: string;
 };
 
 type StaffProfile = {
@@ -198,6 +207,27 @@ function statusClass(status: string) {
 }
 
 export default function AdminView() {
+  const [wibClock, setWibClock] = useState('');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeSection, setActiveSection] = useState('dashboard');
+
+  useEffect(() => {
+    const updateWibClock = () => {
+      setWibClock(
+        new Intl.DateTimeFormat('id-ID', {
+          timeZone: 'Asia/Jakarta',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: false,
+        }).format(new Date())
+      );
+    };
+
+    updateWibClock();
+    const clockInterval = window.setInterval(updateWibClock, 1000);
+    return () => window.clearInterval(clockInterval);
+  }, []);
   const [menus, setMenus] = useState<MenuItem[]>([]);
   const [name, setName] = useState('');
   const [category, setCategory] = useState('makanan');
@@ -232,6 +262,8 @@ export default function AdminView() {
 
   // Data pesanan dan rincian produk.
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [liveTables, setLiveTables] = useState<LiveTableRecord[]>([]);
+  const [liveTablesLoaded, setLiveTablesLoaded] = useState(false);
   const [orderItems, setOrderItems] = useState<AdminOrderItem[]>([]);
   const [orderError, setOrderError] = useState('');
   const [orderMessage, setOrderMessage] = useState('');
@@ -243,6 +275,10 @@ export default function AdminView() {
   // Data akun staf.
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffError, setStaffError] = useState('');
+  const [cashierPresence, setCashierPresence] = useState<
+    { id: string; full_name: string; lastSeen: number }[]
+  >([]);
+  const [presenceNow, setPresenceNow] = useState(Date.now());
 
   // Filter laporan.
   const today = localDateString(new Date());
@@ -305,6 +341,8 @@ export default function AdminView() {
             payment_method: String(raw.payment_method ?? ''),
             total_amount: Number(raw.total_amount ?? 0),
             created_at: toDate(raw.created_at) || new Date(0),
+            table_session_id: String(raw.table_session_id ?? ''),
+            cashier_archived_at: raw.cashier_archived_at ?? null,
             items: []
           } satisfies AdminOrder;
         });
@@ -323,6 +361,44 @@ export default function AdminView() {
     );
 
     return unsubscribe;
+  }, []);
+
+  // Status meja dibaca realtime dan hanya ditampilkan oleh Admin.
+  useEffect(() => {
+    return onSnapshot(
+      collection(db, 'restaurant_tables'),
+      (snapshot) => {
+        const result = snapshot.docs
+          .map((item) => {
+            const raw = item.data();
+            const idNumber = Number(item.id.match(/\\d+/)?.[0] ?? 0);
+            const tableNumber = Number(
+              raw.table_number ?? raw.Table_number ?? idNumber
+            );
+
+            return {
+              table_number: tableNumber,
+              table_name: String(
+                raw.table_name ?? `Meja ${String(tableNumber).padStart(2, '0')}`
+              ),
+              table_status: String(raw.table_status ?? ''),
+              table_session_id: String(raw.table_session_id ?? '')
+            };
+          })
+          .filter((table) =>
+            Number.isInteger(table.table_number) &&
+            table.table_number >= 1 &&
+            table.table_number <= 50
+          );
+
+        setLiveTables(result);
+        setLiveTablesLoaded(true);
+      },
+      (err) => {
+        console.error('Gagal membaca status meja realtime:', err);
+        setLiveTablesLoaded(false);
+      }
+    );
   }, []);
 
   useEffect(() => {
@@ -384,6 +460,37 @@ export default function AdminView() {
     );
 
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, 'cashier_presence'),
+      (snapshot) => {
+        setCashierPresence(
+          snapshot.docs.map((item) => {
+            const raw = item.data();
+            return {
+              id: item.id,
+              full_name: String(raw.full_name ?? ''),
+              lastSeen: raw.lastSeen?.toMillis?.() ?? 0
+            };
+          })
+        );
+      },
+      (err) => {
+        console.error('Gagal membaca kehadiran kasir:', err);
+      }
+    );
+
+    const clock = window.setInterval(
+      () => setPresenceNow(Date.now()),
+      5000
+    );
+
+    return () => {
+      unsubscribe();
+      window.clearInterval(clock);
+    };
   }, []);
 
   useEffect(() => {
@@ -1174,17 +1281,85 @@ export default function AdminView() {
     (order) => order.status === 'selesai'
   ).length;
 
+  // Rekap omzet lunas per tanggal untuk diagram batang laporan.
+  const dailyRevenue = paidOrders.reduce<Record<string, number>>(
+    (totals, order) => {
+      const date = localDateString(order.created_at);
+      totals[date] = (totals[date] || 0) + order.total_amount;
+      return totals;
+    },
+    {}
+  );
+
+  const dailyRevenueEntries = Object.entries(dailyRevenue).sort(
+    ([dateA], [dateB]) => dateA.localeCompare(dateB)
+  );
+
+  const maxDailyRevenue = Math.max(
+    1,
+    ...dailyRevenueEntries.map(([, amount]) => amount)
+  );
+
   const navigation = [
-    { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-    { id: 'menu-admin', label: 'Kelola Menu', icon: '🍽️' },
-    { id: 'pesanan-admin', label: 'Kelola Pesanan', icon: '🧾' },
-    { id: 'meja-admin', label: 'Pengaturan Meja', icon: '🪑' },
-    { id: 'qr-admin', label: 'Pengaturan QR', icon: '▦' },
-    { id: 'banner-admin', label: 'Banner Promosi', icon: '🖼️' },
-    { id: 'laporan-admin', label: 'Laporan', icon: '📈' },
-    { id: 'akun-admin', label: 'Akun Kasir', icon: '👥' },
-    { id: 'pengaturan-admin', label: 'Pengaturan', icon: '⚙️' }
+    { id: 'dashboard', label: 'Dashboard Admin' },
+    { id: 'menu-admin', label: 'Manajemen Menu' },
+    { id: 'meja-admin', label: 'Manajemen Meja' },
+    { id: 'pesanan-admin', label: 'Manajemen Pesanan' },
+    { id: 'arsip-pesanan-admin', label: 'Arsip Pesanan' },
+    { id: 'sampah-admin', label: 'Sampah' },
+    { id: 'laporan-admin', label: 'Laporan Penjualan' },
+    { id: 'akun-admin', label: 'Manajemen Kasir' },
+    { id: 'pengaturan-admin', label: 'Pengaturan Restoran' }
   ];
+  const activePageTitle = navigation.find((item) => item.id === activeSection)?.label || 'Dashboard Admin';
+
+  const liveTableStatuses = Array.from({ length: 50 }, (_, index) => {
+    const tableNumber = index + 1;
+    const record = liveTables.find(
+      (table) => table.table_number === tableNumber
+    );
+    const storedStatus = record?.table_status;
+    const tableSessionId = String(record?.table_session_id || '').trim();
+
+    const tableOrders = orders.filter((order) => {
+      if (
+        Number(order.table_number) !== tableNumber ||
+        order.cashier_archived_at ||
+        storedStatus === 'kosong'
+      ) return false;
+
+      const orderSessionId = String(order.table_session_id || '').trim();
+
+      if (tableSessionId || orderSessionId) {
+        return Boolean(
+          tableSessionId &&
+          orderSessionId &&
+          tableSessionId === orderSessionId
+        );
+      }
+
+      return true;
+    });
+
+    const validStoredStatus = [
+      'terisi',
+      'perlu_dibersihkan',
+      'kosong'
+    ].includes(storedStatus || '');
+
+    const status = validStoredStatus
+      ? storedStatus!
+      : tableOrders.length > 0
+        ? 'terisi'
+        : 'perlu_dibersihkan';
+
+    return {
+      tableNumber,
+      tableName: record?.table_name ||
+        `Meja ${String(tableNumber).padStart(2, '0')}`,
+      status
+    };
+  });
 
   return (
     <main className="min-h-screen w-full min-w-0 overflow-x-clip bg-slate-50 p-2 sm:p-4 lg:p-5">
@@ -1192,21 +1367,38 @@ export default function AdminView() {
 
         <header className="mb-4 flex min-w-0 flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-sm sm:mb-5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5">
           <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              className="mb-3 rounded-lg bg-green-900 px-4 py-2 text-sm font-bold text-white hover:bg-green-800 lg:hidden"
+            >
+              Menu
+            </button>
             <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-green-700">
               WAROENG BPJS
             </p>
             <h1 className="mt-1 break-words text-xl font-extrabold text-slate-900 sm:text-2xl">
-              Dashboard Admin
+              {activePageTitle}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               Pusat pengelolaan restoran
             </p>
           </div>
 
-          <div className="flex min-w-0 items-center gap-3 rounded-xl bg-green-50 px-3 py-3 sm:px-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-800 text-lg font-bold text-white">
-              A
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="rounded-xl border border-green-100 bg-green-50 px-4 py-3 text-center">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-green-700">
+                Waktu Indonesia Barat
+              </p>
+              <p className="mt-1 font-mono text-xl font-extrabold tabular-nums text-green-900">
+                {wibClock || '--:--:--'} WIB
+              </p>
             </div>
+
+            <div className="flex min-w-0 items-center gap-3 rounded-xl bg-green-50 px-3 py-3 sm:px-4">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-800 text-lg font-bold text-white">
+                A
+              </div>
             <div className="min-w-0">
               <p className="break-words text-sm font-bold text-green-900">
                 Administrator
@@ -1215,26 +1407,46 @@ export default function AdminView() {
                 Panel Admin
               </p>
             </div>
+            </div>
           </div>
         </header>
 
-        <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-5">
+        <div className="relative grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[230px_minmax(0,1fr)] lg:gap-5">
 
-          <aside className="h-fit min-w-0 rounded-2xl bg-green-950 p-3 text-white shadow-sm sm:p-4 lg:sticky lg:top-4">
+          {isSidebarOpen && (
+            <button
+              type="button"
+              aria-label="Tutup menu"
+              onClick={() => setIsSidebarOpen(false)}
+              className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+            />
+          )}
+
+          <aside className={`fixed inset-y-0 left-0 z-50 h-full w-[min(82vw,300px)] overflow-y-auto rounded-r-2xl bg-green-950 p-3 text-white shadow-xl transition-transform duration-300 sm:p-4 lg:sticky lg:top-4 lg:z-auto lg:h-fit lg:w-auto lg:translate-x-0 lg:rounded-2xl lg:shadow-sm ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(false)}
+              className="mb-3 rounded-lg border border-green-700 px-3 py-2 text-xs font-semibold text-green-100 lg:hidden"
+            >
+              Tutup Menu
+            </button>
             <p className="mb-3 px-1 text-xs font-bold uppercase tracking-widest text-green-300 sm:px-3">
               Menu Utama
             </p>
 
-            <nav className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-1">
+            <nav className="grid min-w-0 grid-cols-1 gap-1.5">
               {navigation.map((item) => (
-                <a
+                <button
                   key={item.id}
-                  href={`#${item.id}`}
-                  className="flex min-w-0 items-center gap-2 rounded-xl px-2 py-3 text-xs font-semibold text-green-50 transition hover:bg-green-800 sm:gap-3 sm:px-3 sm:text-sm"
+                  type="button"
+                  onClick={() => {
+                    setActiveSection(item.id);
+                    setIsSidebarOpen(false);
+                  }}
+                  className={`flex min-w-0 w-full items-center whitespace-nowrap rounded-xl px-3 py-2.5 text-left text-[13px] font-semibold transition ${activeSection === item.id ? 'bg-green-700 text-white' : 'text-green-50 hover:bg-green-800 hover:text-white'}`}
                 >
-                  <span className="shrink-0 text-base">{item.icon}</span>
-                  <span className="min-w-0 break-words">{item.label}</span>
-                </a>
+                  <span className="whitespace-nowrap">{item.label}</span>
+                </button>
               ))}
             </nav>
 
@@ -1254,109 +1466,269 @@ export default function AdminView() {
           <div className="min-w-0 space-y-4 sm:space-y-5">
 
             {/* DASHBOARD */}
-            <section id="dashboard" className="min-w-0 scroll-mt-5">
+                        {activeSection === 'dashboard' && (
+<section id="dashboard" className="min-w-0 scroll-mt-5">
               <div className="mb-4">
-                <h2 className="break-words text-xl font-extrabold text-slate-900">
-                  Ringkasan Dashboard
+                <h2 className="text-xl font-extrabold text-slate-900">
+                  Dashboard Admin
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Ringkasan data yang tersedia saat ini.
+                  Ringkasan diagram penjualan dan pesanan hari ini.
                 </p>
               </div>
 
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 sm:gap-4">
+              <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-2">
+                {/* DIAGRAM 1: OMZET */}
                 <article className="min-w-0 rounded-2xl border border-green-100 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-500">
-                      Total Menu
-                    </p>
-                    <span className="shrink-0 rounded-xl bg-green-100 p-3 text-xl">
-                      🍽️
-                    </span>
-                  </div>
-                  <p className="mt-4 text-3xl font-extrabold text-green-800">
-                    {menus.length}
-                  </p>
+                  <h3 className="font-bold text-slate-900">
+                    1. Persentase Omzet Harian
+                  </h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    Data menu yang tersimpan
+                    Target omzet Rp1.000.000 setiap hari
                   </p>
+                  <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:justify-center">
+                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-slate-500">Omzet hari ini</p>
+                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                      </div>
+                    </div>
+                    <div className="w-full min-w-0 space-y-3 sm:max-w-[190px]">
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-green-600" />
+                        <div>
+                          <p className="font-semibold text-slate-800">Omzet tercapai</p>
+                          <p className="text-xs text-slate-500">Persentase dari target harian</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-slate-200" />
+                        <div>
+                          <p className="font-semibold text-slate-800">Sisa target</p>
+                          <p className="text-xs text-slate-500">Bagian target yang belum tercapai</p>
+                        </div>
+                      </div>
+                      <p className="text-xs text-slate-400">Omzet dihitung dari transaksi LUNAS.</p>
+                    </div>
+                  </div>
                 </article>
 
+                {/* DIAGRAM 2: MENU */}
                 <article className="min-w-0 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-500">
-                      Banner Promosi
-                    </p>
-                    <span className="shrink-0 rounded-xl bg-blue-100 p-3 text-xl">
-                      🖼️
-                    </span>
-                  </div>
-                  <p className="mt-4 text-3xl font-extrabold text-blue-800">
-                    {banners.length}
-                  </p>
+                  <h3 className="font-bold text-slate-900">
+                    2. Persentase Menu Terjual
+                  </h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    Total banner tersimpan
+                    Target 100 porsi untuk setiap menu per hari
                   </p>
+                  <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:items-start sm:justify-center">
+                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-slate-500">Menu hari ini</p>
+                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                      </div>
+                    </div>
+                    <div className="w-full min-w-0 space-y-2 sm:max-w-[210px]">
+                      <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        Keterangan setiap menu
+                      </p>
+                      {menus.length > 0 ? menus.map((menu, index) => {
+                        const menuColors = [
+                          '#2563EB', '#16A34A', '#D97706', '#9333EA',
+                          '#E11D48', '#0891B2', '#65A30D', '#C026D3',
+                          '#EA580C', '#4F46E5', '#0D9488', '#DB2777'
+                        ];
+                        return (
+                          <div key={menu.id ?? index} className="flex min-w-0 items-center gap-2 text-xs">
+                            <span
+                              className="h-3 w-3 shrink-0 rounded-sm"
+                              style={{ backgroundColor: menuColors[index % menuColors.length] }}
+                            />
+                            <span className="min-w-0 flex-1 break-words font-medium text-slate-700">
+                              {menu.name}
+                            </span>
+                            <span className="shrink-0 text-slate-400">Menunggu data</span>
+                          </div>
+                        );
+                      }) : (
+                        <p className="text-xs text-slate-400">Daftar menu akan ditampilkan di sini.</p>
+                      )}
+                      <p className="pt-1 text-xs text-slate-400">
+                        Setiap menu memiliki warna dan persentase pencapaian sendiri.
+                      </p>
+                    </div>
+                  </div>
                 </article>
 
-                <article className="min-w-0 rounded-2xl border border-amber-100 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-500">
-                      Banner Aktif
-                    </p>
-                    <span className="shrink-0 rounded-xl bg-amber-100 p-3 text-xl">
-                      📢
-                    </span>
-                  </div>
-                  <p className="mt-4 text-3xl font-extrabold text-amber-700">
-                    {activeBannerCount}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Banner yang sedang diaktifkan
-                  </p>
-                </article>
-
+                {/* DIAGRAM 3: PEMBAYARAN */}
                 <article className="min-w-0 rounded-2xl border border-purple-100 bg-white p-4 shadow-sm sm:p-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-500">
-                      Total Pesanan
-                    </p>
-                    <span className="shrink-0 rounded-xl bg-purple-100 p-3 text-xl">
-                      🧾
-                    </span>
-                  </div>
-                  <p className="mt-4 text-3xl font-extrabold text-purple-800">
-                    {orders.length}
-                  </p>
+                  <h3 className="font-bold text-slate-900">
+                    3. Persentase Status Pembayaran
+                  </h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    Pesanan yang tercatat
+                    Perbandingan seluruh pesanan hari ini
                   </p>
+                  <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:justify-center">
+                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-slate-500">Pembayaran</p>
+                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                      </div>
+                    </div>
+                    <div className="w-full min-w-0 space-y-3 sm:max-w-[190px]">
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-green-600" />
+                        <div>
+                          <p className="font-semibold text-slate-800">LUNAS</p>
+                          <p className="text-xs text-slate-500">Jumlah transaksi dan persentase</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-red-600" />
+                        <div>
+                          <p className="font-semibold text-slate-800">BELUM LUNAS</p>
+                          <p className="text-xs text-slate-500">Jumlah transaksi dan persentase</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+
+                {/* DIAGRAM 4: JUMLAH PESANAN */}
+                <article className="min-w-0 rounded-2xl border border-amber-100 bg-white p-4 shadow-sm sm:p-5">
+                  <h3 className="font-bold text-slate-900">
+                    4. Persentase Jumlah Pesanan
+                  </h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Target 100 pesanan yang masuk setiap hari
+                  </p>
+                  <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:justify-center">
+                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
+                      <div className="text-center">
+                        <p className="text-xs font-semibold text-slate-500">Pesanan hari ini</p>
+                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                      </div>
+                    </div>
+                    <div className="w-full min-w-0 space-y-3 sm:max-w-[190px]">
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-amber-500" />
+                        <div>
+                          <p className="font-semibold text-slate-800">Pesanan masuk</p>
+                          <p className="text-xs text-slate-500">Jumlah dan persentase target tercapai</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2 text-sm">
+                        <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-slate-200" />
+                        <div>
+                          <p className="font-semibold text-slate-800">Sisa target</p>
+                          <p className="text-xs text-slate-500">Bagian dari target 100 pesanan</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </article>
               </div>
 
-              <div className="mt-4 min-w-0 rounded-2xl border border-green-100 bg-green-50 p-4 sm:mt-5 sm:p-5">
-                <h3 className="font-bold text-green-900">
-                  Selamat datang di Panel Admin
+              <section className={`${sectionClass} mt-6`}>
+                <h3 className="mb-4 text-lg font-extrabold text-slate-900">
+                  Kasir Sedang Online
                 </h3>
-                <p className="mt-2 break-words text-sm leading-relaxed text-green-800">
-                  Gunakan navigasi untuk mengelola menu, pesanan, meja,
-                  QR, banner, laporan, akun staf, dan informasi operasional.
-                </p>
-              </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-3">
+                  {cashierPresence
+                    .filter(
+                      (cashier) =>
+                        cashier.full_name.trim() &&
+                        cashier.lastSeen > presenceNow - 45000
+                    )
+                    .map((cashier) => (
+                      <div
+                        key={cashier.id}
+                        className="flex items-center gap-2 text-sm font-semibold text-slate-800"
+                      >
+                        <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                        <span>{cashier.full_name}</span>
+                      </div>
+                    ))}
+                </div>
+              </section>
+
+              <section className={`${sectionClass} mt-6`}>
+                <div className="mb-4">
+                  <h3 className="text-lg font-extrabold text-slate-900">
+                    REALTIME PANEL MEJA
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Pemantauan status 50 meja. Status diperbarui otomatis dari aktivitas Kasir.
+                  </p>
+                </div>
+
+                {!liveTablesLoaded ? (
+                  <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                    Status meja sedang dimuat atau belum dapat dibaca.
+                  </p>
+                ) : (
+                  <>
+                    <div className="mb-4 flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold">
+                      <span className="flex items-center gap-2 text-red-700">
+                        <span className="h-3 w-3 rounded-sm bg-red-600" /> TERISI
+                      </span>
+                      <span className="flex items-center gap-2 text-amber-700">
+                        <span className="h-3 w-3 rounded-sm bg-amber-400" /> PERLU DIBERSIHKAN
+                      </span>
+                      <span className="flex items-center gap-2 text-green-700">
+                        <span className="h-3 w-3 rounded-sm bg-green-600" /> KOSONG
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 min-[420px]:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-10">
+                      {liveTableStatuses.map((table) => {
+                        const colorClass =
+                          table.status === 'terisi'
+                            ? 'border-red-200 bg-red-50 text-red-800'
+                            : table.status === 'kosong'
+                              ? 'border-green-200 bg-green-50 text-green-800'
+                              : 'border-amber-200 bg-amber-50 text-amber-800';
+                        const label =
+                          table.status === 'terisi'
+                            ? 'TERISI'
+                            : table.status === 'kosong'
+                              ? 'KOSONG'
+                              : 'PERLU DIBERSIHKAN';
+
+                        return (
+                          <div
+                            key={table.tableNumber}
+                            className={`min-w-0 rounded-xl border p-3 text-center ${colorClass}`}
+                          >
+                            <p className="text-sm font-extrabold">
+                              Meja {String(table.tableNumber).padStart(2, '0')}
+                            </p>
+                            <p className="mt-1 text-[10px] font-bold leading-tight">
+                              {label}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </section>
             </section>
+            )}
 
             {/* KELOLA PESANAN */}
-            <section id="pesanan-admin" className={sectionClass}>
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        {activeSection === 'pesanan-admin' && (
+<section id="pesanan-admin" className={sectionClass}>
+              <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-green-100 bg-gradient-to-r from-green-50 to-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5">
                 <div>
-                  <h2 className="text-lg font-bold text-green-900">
+                  <h2 className="text-xl font-extrabold tracking-tight text-green-950">
                     Kelola Pesanan
                   </h2>
-                  <p className="mt-1 text-sm text-slate-600">
+                  <p className="mt-2 text-sm leading-relaxed text-slate-600">
                     Daftar pesanan dan rincian produk diperbarui langsung dari Firestore.
                   </p>
                 </div>
-                <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
+                <span className="w-fit rounded-full border border-green-200 bg-white px-4 py-2 text-sm font-extrabold text-green-800 shadow-sm">
                   {orders.length} pesanan
                 </span>
               </div>
@@ -1373,7 +1745,7 @@ export default function AdminView() {
                 </p>
               )}
 
-              <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 sm:p-4">
                 <input
                   value={orderSearch}
                   onChange={(event) => setOrderSearch(event.target.value)}
@@ -1389,10 +1761,6 @@ export default function AdminView() {
                   <option value="semua">Semua pesanan</option>
                   <option value="belum_lunas">Belum lunas</option>
                   <option value="lunas">Sudah lunas</option>
-                  <option value="menunggu">Status menunggu</option>
-                  <option value="diproses">Status diproses</option>
-                  <option value="siap">Status siap</option>
-                  <option value="selesai">Status selesai</option>
                   <option value="dibatalkan">Status dibatalkan</option>
                 </select>
               </div>
@@ -1413,14 +1781,14 @@ export default function AdminView() {
                   {filteredOrders.map((order) => (
                     <article
                       key={order.id}
-                      className="min-w-0 overflow-hidden rounded-xl border border-slate-200"
+                      className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-shadow hover:shadow-md"
                     >
-                      <div className="flex min-w-0 flex-col gap-3 bg-slate-50 p-3 sm:flex-row sm:items-start sm:justify-between sm:p-4">
+                      <div className="flex min-w-0 flex-col gap-3 border-b border-slate-100 bg-slate-50/80 p-4 sm:flex-row sm:items-start sm:justify-between sm:p-5">
                         <div className="min-w-0">
-                          <p className="break-words font-extrabold text-slate-900">
+                          <p className="break-words text-base font-extrabold tracking-tight text-slate-900">
                             {order.order_code || order.id}
                           </p>
-                          <p className="mt-1 break-words text-sm text-slate-600">
+                          <p className="mt-2 break-words text-sm font-semibold text-slate-700">
                             {order.customer_name || 'Nama pelanggan tidak tersedia'}
                           </p>
                           <p className="mt-1 text-xs text-slate-500">
@@ -1430,7 +1798,7 @@ export default function AdminView() {
                           </p>
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusClass(order.status)}`}>
                             {statusLabel(order.status)}
                           </span>
@@ -1444,8 +1812,8 @@ export default function AdminView() {
                         </div>
                       </div>
 
-                      <div className="min-w-0 p-3 sm:p-4">
-                        <h3 className="text-sm font-bold text-slate-800">
+                      <div className="min-w-0 p-4 sm:p-5">
+                        <h3 className="border-b border-slate-100 pb-2 text-sm font-extrabold text-green-900">
                           Rincian Pesanan
                         </h3>
 
@@ -1454,11 +1822,11 @@ export default function AdminView() {
                             Rincian produk belum terbaca. Periksa data order_items.
                           </p>
                         ) : (
-                          <div className="mt-2 space-y-2">
+                          <div className="mt-3 space-y-3">
                             {order.items.map((item) => (
                               <div
                                 key={item.id}
-                                className="flex min-w-0 items-start justify-between gap-3 border-b border-slate-100 pb-2 text-sm last:border-0"
+                                className="flex min-w-0 items-start justify-between gap-3 border-b border-slate-100 pb-3 text-sm last:border-0 last:pb-0"
                               >
                                 <div className="min-w-0">
                                   <p className="break-words font-semibold text-slate-800">
@@ -1476,18 +1844,18 @@ export default function AdminView() {
                           </div>
                         )}
 
-                        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-green-50 p-3">
+                        <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-green-100 bg-green-50 p-4">
                           <span className="text-sm font-bold text-green-900">
                             Total Pesanan
                           </span>
-                          <span className="text-base font-extrabold text-green-900">
+                          <span className="text-lg font-extrabold tabular-nums text-green-900">
                             {rupiah(order.total_amount)}
                           </span>
                         </div>
 
-                        <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="mt-5 grid min-w-0 grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 sm:p-4">
                           <div className="min-w-0">
-                            <label className="mb-1 block text-xs font-bold text-slate-600">
+                            <label className="mb-2 block text-xs font-extrabold text-slate-700">
                               Status Pesanan
                             </label>
                             <select
@@ -1499,7 +1867,7 @@ export default function AdminView() {
                                   event.target.value as OrderStatus
                                 )
                               }
-                              className="w-full min-w-0 rounded-lg border border-slate-200 p-3 text-sm"
+                              className="w-full min-w-0 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition-colors focus:border-green-600 focus:ring-2 focus:ring-green-100"
                             >
                               {orderStatusOptions.map((status) => (
                                 <option key={status} value={status}>
@@ -1510,11 +1878,11 @@ export default function AdminView() {
                           </div>
 
                           <div className="min-w-0">
-                            <label className="mb-1 block text-xs font-bold text-slate-600">
+                            <label className="mb-2 block text-xs font-extrabold text-slate-700">
                               Metode Pembayaran
                             </label>
                             {order.payment_status === 'lunas' ? (
-                              <div className="rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-800">
+                              <div className="rounded-xl border border-green-100 bg-green-50 p-3 text-sm font-bold text-green-800">
                                 {order.payment_method === 'non_tunai'
                                   ? 'Non-Tunai'
                                   : order.payment_method === 'tunai'
@@ -1530,7 +1898,7 @@ export default function AdminView() {
                                     [order.id]: event.target.value
                                   }))
                                 }
-                                className="w-full min-w-0 rounded-lg border border-slate-200 p-3 text-sm"
+                                className="w-full min-w-0 rounded-xl border border-slate-200 bg-white p-3 text-sm outline-none transition-colors focus:border-green-600 focus:ring-2 focus:ring-green-100"
                               >
                                 <option value="tunai">Tunai</option>
                                 <option value="non_tunai">Non-Tunai</option>
@@ -1547,7 +1915,7 @@ export default function AdminView() {
                               order.status === 'dibatalkan'
                             }
                             onClick={() => recordOrderPayment(order)}
-                            className={`${buttonClass} mt-3 bg-green-800 text-white hover:bg-green-900`}
+                            className={`${buttonClass} mt-4 w-full rounded-xl bg-green-800 py-3 font-bold text-white shadow-sm hover:bg-green-900`}
                           >
                             {processingOrderId === order.id
                               ? 'Memproses...'
@@ -1556,32 +1924,395 @@ export default function AdminView() {
                         )}
 
                         {order.payment_status === 'lunas' && (
-                          <p className="mt-3 rounded-lg bg-green-50 p-3 text-center text-sm font-bold text-green-800">
+                          <p className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-center text-sm font-bold text-green-800">
                             Pembayaran telah tercatat lunas.
                           </p>
                         )}
                       </div>
-                    </article>
+
+                      <div className="grid grid-cols-1 gap-3 border-t border-slate-100 bg-slate-50/70 p-4 sm:grid-cols-2 sm:p-5">
+                        <button
+                          type="button"
+                          disabled
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800 opacity-80"
+                        >
+                          Pindahkan ke Arsip
+                        </button>
+                        <button
+                          type="button"
+                          disabled
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 opacity-80"
+                        >
+                          Pindahkan ke Sampah
+                        </button>
+                      </div>
+</article>
                   ))}
                 </div>
               )}
             </section>
+            )}
+
+            {/* ARSIP PESANAN */}
+            {activeSection === 'arsip-pesanan-admin' && (
+              <section id="arsip-pesanan-admin" className={sectionClass}>
+                <div className="mb-5">
+                  <h2 className="text-xl font-extrabold text-green-900">
+                    Arsip Pesanan
+                  </h2>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                    Riwayat pesanan lama yang telah dipindahkan ke arsip,
+                    dikelompokkan berdasarkan tahun dan bulan.
+                  </p>
+                </div>
+
+                <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <h3 className="mb-3 text-base font-extrabold text-green-900">
+                    Cari Arsip Pesanan
+                  </h3>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      disabled
+                      placeholder="Cari nama pelanggan atau nomor pesanan..."
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400"
+                    />
+                  </div>
+
+                  <div className="mt-4">
+                    <h4 className="mb-2 text-sm font-bold text-slate-700">
+                      Filter Tanggal Pesanan
+                    </h4>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="block text-sm font-medium text-slate-600">
+                        Dari tanggal
+                        <input
+                          type="date"
+                          disabled
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-slate-600">
+                        Sampai tanggal
+                        <input
+                          type="date"
+                          disabled
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-extrabold text-green-900">
+                    Kelompok Arsip
+                  </h3>
+                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-800">
+                    Per Tahun / Per Bulan
+                  </span>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="overflow-hidden rounded-2xl border border-green-200 bg-white shadow-sm">
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-green-50 p-4 sm:p-5">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-800 text-white">
+                          <span className="text-lg font-extrabold">T</span>
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="font-extrabold text-green-950">
+                            Kelompok Tahun
+                          </h4>
+                          <p className="text-xs text-green-800">
+                            Tahun terbaru ditampilkan lebih dahulu
+                          </p>
+                        </div>
+                      </div>
+                      <span className="rounded-full border border-green-200 bg-white px-3 py-1 text-xs font-bold text-green-800">
+                        Tingkat 1
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 p-4 sm:p-5">
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-extrabold text-slate-800">
+                              Kelompok Bulan
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              Setiap tahun berisi arsip berdasarkan bulan.
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+                            Tingkat 2
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-2">
+                          <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-800">
+                              <span className="text-sm font-bold">B</span>
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-bold text-slate-700">
+                                Daftar Bulan
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                Bulan akan dikelompokkan di dalam tahun.
+                              </p>
+                            </div>
+                            <span className="text-xs font-semibold text-slate-400">
+                              Arsip
+                            </span>
+                          </div>
+
+                          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4">
+                            <div className="flex items-start gap-3">
+                              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                                <span className="text-sm font-bold">P</span>
+                              </div>
+                              <div>
+                                <p className="text-sm font-semibold text-slate-700">
+                                  Daftar Pesanan per Bulan
+                                </p>
+                                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                                  Nomor pesanan, nama pelanggan, tanggal,
+                                  nomor meja, total pembayaran, dan tombol
+                                  Lihat Detail akan ditampilkan di sini.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+            {/* SAMPAH */}
+            {activeSection === 'sampah-admin' && (
+              <section id="sampah-admin" className={sectionClass}>
+                <div className="mb-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-xl font-extrabold text-green-900">
+                      Sampah
+                    </h2>
+                    <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-800">
+                      Pesanan di Sampah
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                    Kelola pesanan yang telah dipindahkan ke Sampah.
+                    Pesanan dapat dipulihkan atau dihapus secara permanen.
+                  </p>
+                </div>
+
+                <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <h3 className="mb-3 text-base font-extrabold text-green-900">
+                    Cari Pesanan di Sampah
+                  </h3>
+
+                  <input
+                    type="text"
+                    disabled
+                    placeholder="Cari nama pelanggan atau nomor pesanan..."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400"
+                  />
+
+                  <div className="mt-4">
+                    <h4 className="mb-2 text-sm font-bold text-slate-700">
+                      Filter Tanggal Pesanan
+                    </h4>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="block text-sm font-medium text-slate-600">
+                        Dari tanggal
+                        <input
+                          type="date"
+                          disabled
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-slate-600">
+                        Sampai tanggal
+                        <input
+                          type="date"
+                          disabled
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-extrabold text-green-900">
+                    Daftar Pesanan di Sampah
+                  </h3>
+                  <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-800">
+                    Area Pengelolaan
+                  </span>
+                </div>
+
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="border-b border-slate-100 bg-slate-50 p-4 sm:p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-800">
+                        <span className="text-lg font-extrabold">S</span>
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-800">
+                          Daftar Transaksi
+                        </h4>
+                        <p className="text-xs text-slate-500">
+                          Pesanan yang dipindahkan ke Sampah akan ditampilkan di sini.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 sm:p-5">
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+                      <p className="font-semibold text-slate-700">
+                        Belum ada tampilan daftar transaksi
+                      </p>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                        Informasi nomor pesanan, nama pelanggan, tanggal,
+                        nomor meja, dan total pembayaran akan ditampilkan
+                        pada setiap kartu transaksi.
+                      </p>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        disabled
+                        className="flex w-full items-center justify-center rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800 opacity-80"
+                      >
+                        Pulihkan
+                      </button>
+                      <button
+                        type="button"
+                        disabled
+                        className="flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 opacity-80"
+                      >
+                        Hapus Permanen
+                      </button>
+                    </div>
+
+                    <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+                      Penghapusan permanen nantinya memerlukan konfirmasi Admin
+                      sebelum transaksi benar-benar dihapus.
+                    </p>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* PENGATURAN QR */}
+                        {activeSection === 'meja-admin' && (
+<section id="qr-admin" className={sectionClass}>
+              <div className="mb-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="break-words text-lg font-extrabold text-green-900">
+                    Pengelola QR Meja
+                  </h2>
+                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-800">
+                    50 Meja
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Kelola, pulihkan, dan cetak QR unik untuk Meja 01 sampai Meja 50.
+                  QR yang sudah tersedia tetap dipertahankan.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={generateTableQrs}
+                disabled={qrLoading}
+                className={`${buttonClass} mt-4 py-4 bg-green-800 text-white shadow-sm hover:bg-green-900`}
+              >
+                {qrLoading ? 'Memproses 50 QR...' : 'Buat / Pulihkan 50 QR'}
+              </button>
+
+              {qrMessage && (
+                <p className="mt-3 break-words rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">
+                  {qrMessage}
+                </p>
+              )}
+
+              {qrItems.length === 50 && (
+                <>
+                  <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm leading-relaxed text-green-900 shadow-sm">
+                    <p className="font-bold">
+                      50 QR berhasil disiapkan.
+                    </p>
+                    <p>
+                      Token QR disimpan terenkripsi di server. Pratinjau QR
+                      ditampilkan selama halaman Admin terbuka.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={printTableQrs}
+                    className={`${buttonClass} mt-4 w-full py-4 bg-blue-700 text-white shadow-sm hover:bg-blue-800`}
+                  >
+                    Cetak 50 QR Meja
+                  </button>
+
+                  <div className="mt-5 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-5">
+                    {qrItems.map((item) => (
+                      <div
+                        key={item.tableNumber}
+                        className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 text-center shadow-sm transition-shadow hover:shadow-md sm:p-4"
+                      >
+                        <p className="break-words text-sm font-extrabold text-green-900">
+                          {item.tableName}
+                        </p>
+                        <img
+                          src={item.imageUrl}
+                          alt={`QR ${item.tableName}`}
+                          className="mx-auto mt-2 block w-full max-w-full"
+                        />
+                        <p className="mt-2 break-words text-xs text-slate-500">
+                          Scan untuk memesan
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </section>
+            )}
 
             {/* PENGATURAN MEJA */}
-            <section id="meja-admin" className={sectionClass}>
-              <h2 className="break-words font-bold text-green-900">
-                Pengaturan Meja Restoran
-              </h2>
-
-              <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                Siapkan nomor meja 01 sampai 50 secara otomatis.
-              </p>
+                        {activeSection === 'meja-admin' && (
+<section id="meja-admin" className={sectionClass}>
+              <div className="mb-5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="break-words text-lg font-extrabold text-green-900">
+                    Pengelola 50 Meja
+                  </h2>
+                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-800">
+                    01–50
+                  </span>
+                </div>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Siapkan data 50 meja dan periksa kondisi serta rekomendasi status meja.
+                  Pengubahan status operasional tetap dilakukan melalui Panel Meja Kasir.
+                </p>
+              </div>
 
               <button
                 type="button"
                 onClick={seedRestaurantTables}
                 disabled={seedingTables}
-                className={`${buttonClass} mt-3 bg-green-800 text-white hover:bg-green-900`}
+                className={`${buttonClass} mt-3 w-full py-4 bg-green-800 text-white shadow-sm hover:bg-green-900`}
               >
                 {seedingTables ? 'Menyiapkan Meja...' : 'Siapkan 50 Meja'}
               </button>
@@ -1596,7 +2327,7 @@ export default function AdminView() {
                 type="button"
                 onClick={previewTableMigration}
                 disabled={previewLoading}
-                className={`${buttonClass} mt-3 border border-blue-200 bg-blue-50 text-blue-900 hover:bg-blue-100`}
+                className={`${buttonClass} mt-3 w-full border border-blue-200 bg-blue-50 py-3 text-blue-900 shadow-sm hover:bg-blue-100`}
               >
                 {previewLoading ? 'Membaca Status 50 Meja...' : 'Preview Status 50 Meja'}
               </button>
@@ -1613,7 +2344,7 @@ export default function AdminView() {
                     {previewResult.message}
                   </p>
 
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                     {[
                       ['Total Meja', previewResult.summary.total_tables],
                       ['Dokumen Tersedia', previewResult.summary.existing_documents],
@@ -1626,20 +2357,20 @@ export default function AdminView() {
                       ['Status Tidak Cocok', previewResult.summary.status_mismatches],
                       ['Meja Nonaktif', previewResult.summary.inactive_tables]
                     ].map(([label, value]) => (
-                      <div key={label} className="rounded-lg border border-slate-200 bg-white p-3">
-                        <p className="text-xs leading-relaxed text-slate-500">{label}</p>
-                        <p className="mt-1 text-xl font-bold text-slate-900">{value}</p>
+                      <div key={label} className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                        <p className="break-words text-xs font-medium leading-relaxed text-slate-500">{label}</p>
+                        <p className="mt-2 text-2xl font-extrabold tabular-nums text-slate-900">{value}</p>
                       </div>
                     ))}
                   </div>
 
                   <div className="space-y-2">
-                    <h3 className="font-bold text-slate-800">Rincian Rekomendasi 50 Meja</h3>
+                    <h3 className="border-b border-slate-200 pb-2 text-base font-extrabold text-green-900">Rincian Rekomendasi 50 Meja</h3>
 
                     {previewResult.tables.map((table) => (
                       <article
                         key={table.table_number}
-                        className="rounded-lg border border-slate-200 bg-white p-3"
+                        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <h4 className="font-bold text-slate-900">
@@ -1650,7 +2381,7 @@ export default function AdminView() {
                           </span>
                         </div>
 
-                        <div className="mt-2 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
+                        <div className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
                           <p className="text-slate-600">
                             Status sekarang: <strong>{table.current_status || 'Belum diatur'}</strong>
                           </p>
@@ -1676,7 +2407,7 @@ export default function AdminView() {
                         )}
 
                         {(table.session_conflict || table.status_mismatch) && (
-                          <p className="mt-2 rounded-md bg-amber-50 p-2 text-xs font-semibold text-amber-800">
+                          <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold leading-relaxed text-amber-900">
                             {[
                               table.session_conflict ? 'Terdapat konflik sesi meja.' : '',
                               table.status_mismatch ? 'Status sekarang tidak cocok dengan pesanan aktif.' : ''
@@ -1689,79 +2420,11 @@ export default function AdminView() {
                 </div>
               )}
             </section>
-
-            {/* PENGATURAN QR */}
-            <section id="qr-admin" className={sectionClass}>
-              <h2 className="break-words text-lg font-bold text-green-900">
-                Pengelolaan QR Meja
-              </h2>
-
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                Buat atau pulihkan 50 QR unik untuk meja 01 sampai 50.
-                QR yang sudah tersedia tidak akan diganti.
-              </p>
-
-              <button
-                type="button"
-                onClick={generateTableQrs}
-                disabled={qrLoading}
-                className={`${buttonClass} mt-4 bg-green-800 text-white hover:bg-green-900`}
-              >
-                {qrLoading ? 'Memproses 50 QR...' : 'Buat / Pulihkan 50 QR'}
-              </button>
-
-              {qrMessage && (
-                <p className="mt-3 break-words rounded-lg bg-green-50 p-3 text-sm font-semibold text-green-900">
-                  {qrMessage}
-                </p>
-              )}
-
-              {qrItems.length === 50 && (
-                <>
-                  <div className="mt-4 rounded-xl bg-green-50 p-3 text-sm leading-relaxed text-green-900">
-                    <p className="font-bold">
-                      50 QR berhasil disiapkan.
-                    </p>
-                    <p>
-                      Token QR hanya tersimpan sementara selama halaman
-                      Admin terbuka.
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={printTableQrs}
-                    className={`${buttonClass} mt-4 bg-blue-700 text-white hover:bg-blue-800`}
-                  >
-                    Cetak 50 QR Meja
-                  </button>
-
-                  <div className="mt-5 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 md:grid-cols-4 xl:grid-cols-5">
-                    {qrItems.map((item) => (
-                      <div
-                        key={item.tableNumber}
-                        className="min-w-0 rounded-xl border p-2 text-center sm:p-3"
-                      >
-                        <p className="break-words text-sm font-extrabold text-green-900">
-                          {item.tableName}
-                        </p>
-                        <img
-                          src={item.imageUrl}
-                          alt={`QR ${item.tableName}`}
-                          className="mx-auto mt-2 block w-full max-w-full"
-                        />
-                        <p className="mt-2 break-words text-xs text-slate-500">
-                          Scan untuk memesan
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-            </section>
+            )}
 
             {/* BANNER PROMOSI */}
-            <section id="banner-admin" className={sectionClass}>
+                        {activeSection === 'menu-admin' && (
+<section id="banner-admin" className={sectionClass}>
               <h2 className="break-words text-lg font-bold text-green-900">
                 Pengelolaan Banner Promosi
               </h2>
@@ -1952,9 +2615,11 @@ export default function AdminView() {
                 )}
               </div>
             </section>
+            )}
 
             {/* LAPORAN */}
-            <section id="laporan-admin" className={sectionClass}>
+                        {activeSection === 'laporan-admin' && (
+<section id="laporan-admin" className={sectionClass}>
               <h2 className="text-lg font-bold text-green-900">
                 Laporan Penjualan
               </h2>
@@ -2037,6 +2702,52 @@ export default function AdminView() {
                 </article>
               </div>
 
+              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-4">
+                  <h3 className="font-bold text-slate-800">Grafik Omzet Harian</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Omzet dari pembayaran lunas sesuai rentang tanggal terpilih.
+                  </p>
+                </div>
+
+                {reportStart && reportEnd && reportStart > reportEnd ? (
+                  <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                    Pilih rentang tanggal yang valid untuk melihat grafik.
+                  </p>
+                ) : dailyRevenueEntries.length === 0 ? (
+                  <p className="rounded-lg bg-slate-50 p-4 text-center text-sm text-slate-500">
+                    Belum ada transaksi lunas pada rentang tanggal ini.
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto pb-2">
+                    <div className="flex min-w-max items-end gap-3">
+                      {dailyRevenueEntries.map(([date, amount]) => (
+                        <div
+                          key={date}
+                          className="flex w-12 flex-col items-center gap-2"
+                          title={`${date}: ${rupiah(amount)}`}
+                        >
+                          <div className="flex h-36 w-full items-end justify-center rounded-t-md bg-slate-50">
+                            <div
+                              className="w-7 rounded-t-md bg-green-600 transition-all"
+                              style={{
+                                height: `${Math.max(3, (amount / maxDailyRevenue) * 100)}%`
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs font-medium text-slate-600">
+                            {date.slice(8, 10)}/{date.slice(5, 7)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-slate-400">
+                  Sentuh atau tahan batang untuk melihat nilai omzet harian.
+                </p>
+              </div>
+
               <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
                 <div className="bg-slate-50 p-3">
                   <h3 className="font-bold text-slate-800">
@@ -2066,155 +2777,289 @@ export default function AdminView() {
                 Pesanan yang belum lunas tidak dimasukkan ke omzet.
               </p>
             </section>
+            )}
 
             {/* AKUN KASIR */}
-            <section id="akun-admin" className={sectionClass}>
-              <h2 className="text-lg font-bold text-green-900">
-                Akun Staf dan Kasir
-              </h2>
-              <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                Daftar akun dibaca dari koleksi staff_profiles.
-              </p>
-
-              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-                <p className="text-sm font-bold text-amber-900">
-                  Pengelolaan akun baru belum diaktifkan.
-                </p>
-                <p className="mt-1 text-xs leading-relaxed text-amber-800">
-                  Pembuatan dan persetujuan akun Kasir harus dilakukan melalui
-                  backend tepercaya oleh Admin. Halaman ini hanya menampilkan
-                  data akun yang sudah terdaftar.
-                </p>
-              </div>
-
-              {staffError && (
-                <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                  {staffError}
-                </p>
-              )}
-
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <h3 className="font-bold text-slate-800">
-                  Daftar Akun
-                </h3>
-                <span className="rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
-                  {staffProfiles.length} akun
-                </span>
-              </div>
-
-              {staffProfiles.length === 0 ? (
-                <p className="mt-3 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                  Belum ada data akun yang dapat ditampilkan.
-                </p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {staffProfiles.map((staff) => {
-                    const role = staff.role.trim().toLowerCase();
-                    const isCashier = role === 'kasir';
-
-                    return (
-                      <article
-                        key={staff.id}
-                        className="flex min-w-0 flex-col gap-2 rounded-xl border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"
-                      >
-                        <div className="min-w-0">
-                          <p className="break-words font-bold text-slate-900">
-                            {staff.full_name || 'Nama belum diatur'}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {staff.created_at
-                              ? `Terdaftar: ${formatDate(staff.created_at)}`
-                              : 'Tanggal pendaftaran tidak tersedia'}
-                          </p>
-                        </div>
-
-                        <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${
-                          isCashier
-                            ? 'bg-blue-100 text-blue-800'
-                            : 'bg-green-100 text-green-800'
-                        }`}>
-                          {staff.role || 'Role belum diatur'}
-                        </span>
-                      </article>
-                    );
-                  })}
+            {activeSection === 'akun-admin' && (
+              <section id="akun-admin" className={sectionClass}>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-bold text-green-900">
+                      Manajemen Kasir
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Pantau akun staf dan kasir WAROENG BPJS.
+                    </p>
+                  </div>
+                  <span className="w-fit rounded-full bg-green-100 px-3 py-1 text-xs font-bold text-green-800">
+                    {staffProfiles.length} akun terdaftar
+                  </span>
                 </div>
-              )}
-            </section>
+
+                {/* STATUS KASIR */}
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="font-bold text-slate-900">Kasir yang Bertugas</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Status kehadiran kasir akan ditampilkan di bagian ini.
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap gap-4 text-xs font-medium">
+                    <span className="inline-flex items-center gap-2 text-green-700">
+                      <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                      Online
+                    </span>
+                    <span className="inline-flex items-center gap-2 text-slate-500">
+                      <span className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                      Offline
+                    </span>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-center">
+                    <p className="text-sm font-semibold text-slate-700">
+                      Pemantauan online belum diaktifkan
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Nama kasir dan indikator status akan muncul setelah fitur kehadiran diaktifkan.
+                    </p>
+                  </div>
+                </div>
+
+                {/* DAFTAR AKUN */}
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-bold text-slate-900">
+                        Daftar Akun Staf dan Kasir
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Data dibaca dari koleksi staff_profiles.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+                      {staffProfiles.length} akun
+                    </span>
+                  </div>
+
+                  {staffError && (
+                    <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                      {staffError}
+                    </p>
+                  )}
+
+                  {staffProfiles.length === 0 ? (
+                    <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                      Belum ada data akun yang dapat ditampilkan.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {staffProfiles.map((staff) => {
+                        const role = staff.role.trim().toLowerCase();
+                        const isCashier = role === 'kasir';
+
+                        return (
+                          <article
+                            key={staff.id}
+                            className="flex min-w-0 flex-col gap-3 rounded-xl border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between"
+                          >
+                            <div className="min-w-0">
+                              <p className="break-words font-bold text-slate-900">
+                                {staff.full_name || 'Nama belum diatur'}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {staff.created_at
+                                  ? `Terdaftar: ${formatDate(staff.created_at)}`
+                                  : 'Tanggal pendaftaran tidak tersedia'}
+                              </p>
+                            </div>
+                            <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${
+                              isCashier
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-green-100 text-green-800'
+                            }`}>
+                              {staff.role || 'Role belum diatur'}
+                            </span>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* FORM TAMBAH AKUN */}
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="font-bold text-slate-900">Tambah Akun Kasir</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Rancangan form pendaftaran akun. Penyimpanan belum diaktifkan.
+                  </p>
+
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Nama lengkap
+                      <input disabled placeholder="Masukkan nama kasir"
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" />
+                    </label>
+
+                    <label className="block text-xs font-semibold text-slate-600">
+                      Email akun
+                      <input disabled type="email" placeholder="nama@email.com"
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" />
+                    </label>
+
+                    <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
+                      Kata sandi awal
+                      <div className="mt-1 flex gap-2">
+                        <input disabled type="password" placeholder="Buat kata sandi awal"
+                          className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" />
+                        <button type="button" disabled
+                          className="rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-400">
+                          Tampilkan Sandi
+                        </button>
+                      </div>
+                    </label>
+                  </div>
+
+                  <button type="button" disabled
+                    className="mt-4 w-full rounded-xl bg-green-700 px-4 py-3 text-sm font-bold text-white opacity-50 sm:w-auto">
+                    Tambahkan Akun Kasir
+                  </button>
+                </div>
+
+                {/* PENGELOLAAN AKUN */}
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
+                  <h3 className="font-bold text-slate-900">Pengelolaan Akun</h3>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pengaturan akun akan tersedia setelah fungsi pengelolaan diaktifkan melalui backend tepercaya.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" disabled
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-400">
+                      Kelola Akun
+                    </button>
+                    <button type="button" disabled
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-400">
+                      Nonaktifkan Akun
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
+
 
             {/* PENGATURAN */}
-            <section id="pengaturan-admin" className={sectionClass}>
-              <h2 className="text-lg font-bold text-green-900">
-                Pengaturan Restoran
-              </h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Informasi operasional yang digunakan oleh Website WAROENG BPJS.
-              </p>
-
-              <div className="mt-4 space-y-3">
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <p className="text-xs font-semibold text-slate-500">
-                    Nama usaha
-                  </p>
-                  <p className="mt-1 font-bold text-slate-900">
-                    WAROENG BPJS
+            {activeSection === 'pengaturan-admin' && (
+              <section id="pengaturan-admin" className={sectionClass}>
+                <div className="mb-5">
+                  <h2 className="text-lg font-extrabold text-green-900">
+                    Pengaturan Restoran
+                  </h2>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                    Informasi identitas dan operasional WAROENG BPJS.
                   </p>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <p className="text-xs font-semibold text-slate-500">
-                    Alamat usaha
-                  </p>
-                  <p className="mt-1 break-words text-sm font-semibold leading-relaxed text-slate-900">
-                    Jl. Kandang Sapi 001/002 No. 01 Desa Tanjungsari
-                    Kecamatan Sukaluyu Kabupaten Cianjur
-                  </p>
-                </div>
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Identitas Restoran
+                    </p>
+                    <p className="mt-2 text-xl font-extrabold text-green-900">
+                      WAROENG BPJS
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500">Nama usaha</p>
+                  </div>
 
-                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="text-xs font-semibold text-slate-500">
-                      Jumlah meja
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Alamat Restoran
                     </p>
-                    <p className="mt-1 text-xl font-extrabold text-green-800">
-                      50 meja
-                    </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Nomor meja 01 sampai 50
+                    <p className="mt-2 break-words text-sm font-semibold leading-relaxed text-slate-900">
+                      Jl. Kandang Sapi 001/002 No. 01 Desa Tanjungsari,
+                      Kecamatan Sukaluyu Kabupaten Cianjur
                     </p>
                   </div>
 
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <p className="text-xs font-semibold text-slate-500">
-                      Sistem pembayaran
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Kapasitas Meja
                     </p>
-                    <p className="mt-1 font-bold text-slate-900">
-                      Tunai dan Non-Tunai
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
+                        <p className="text-3xl font-extrabold text-green-800">50</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          Total meja
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
+                        <p className="text-2xl font-extrabold text-green-800">01–50</p>
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          Nomor meja
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Sistem Pembayaran
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Pembayaran dicatat oleh petugas
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <span className="rounded-full bg-green-50 px-3 py-1.5 text-xs font-bold text-green-800">
+                        Tunai
+                      </span>
+                      <span className="rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800">
+                        Non-Tunai
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Pembayaran dicatat oleh petugas.
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-sm font-bold text-blue-900">
+                      Informasi Pengaturan
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-blue-800">
+                      Halaman ini masih menampilkan informasi operasional.
+                      Penyimpanan pengaturan belum diaktifkan karena struktur
+                      koleksi pengaturan restoran belum tersedia.
                     </p>
                   </div>
                 </div>
+              </section>
+            )}
 
-                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
-                  <p className="text-sm font-bold text-blue-900">
-                    Pengaturan penyimpanan belum tersedia
+            {/* RINGKASAN MANAJEMEN MENU */}
+            {activeSection === 'menu-admin' && (
+              <section className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <article className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-500">Total Produk</p>
+                  <p className="mt-2 text-3xl font-extrabold text-green-900">
+                    {menus.length}
                   </p>
-                  <p className="mt-1 text-xs leading-relaxed text-blue-800">
-                    Bagian ini saat ini menampilkan informasi operasional.
-                    Belum ada perubahan yang disimpan ke database karena
-                    struktur koleksi pengaturan restoran belum tersedia.
+                  <p className="mt-1 text-xs text-slate-500">Seluruh menu terdaftar</p>
+                </article>
+                <article className="rounded-2xl border border-green-100 bg-white p-4 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-500">Produk Tersedia</p>
+                  <p className="mt-2 text-3xl font-extrabold text-green-900">
+                    {menus.filter((menu) => menu.is_available).length}
                   </p>
-                </div>
-              </div>
-            </section>
+                  <p className="mt-1 text-xs text-slate-500">Menu yang dapat dipesan</p>
+                </article>
+              </section>
+            )}
 
             {/* KELOLA MENU */}
-            <section id="menu-admin" className={sectionClass}>
-              <h2 className="mb-4 break-words text-lg font-bold text-green-900">
-                {editingMenu ? 'Edit Produk' : 'Tambah Menu'}
-              </h2>
+                        {activeSection === 'menu-admin' && (
+<section id="menu-admin" className={sectionClass}>
+              <div className="mb-5">
+                <h2 className="break-words text-lg font-extrabold text-green-900">
+                  {editingMenu ? 'Edit Produk' : 'Tambah Menu'}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Lengkapi informasi produk dan foto menu restoran.
+                </p>
+              </div>
 
               <input
                 value={name}
@@ -2223,24 +3068,35 @@ export default function AdminView() {
                 className={inputClass}
               />
 
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className={inputClass}
-              >
-                <option value="makanan">Makanan</option>
-                <option value="minuman">Minuman</option>
-                <option value="cemilan">Cemilan</option>
-              </select>
-
-              <input
-                type="number"
-                min="1"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                placeholder="Harga produk"
-                className={inputClass}
-              />
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-4">
+                <div className="min-w-0">
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Kategori Produk
+                  </label>
+                  <select
+                    value={category}
+                    onChange={(e) => setCategory(e.target.value)}
+                    className={inputClass}
+                  >
+                    <option value="makanan">Makanan</option>
+                    <option value="minuman">Minuman</option>
+                    <option value="cemilan">Cemilan</option>
+                  </select>
+                </div>
+                <div className="min-w-0">
+                  <label className="mb-2 block text-sm font-semibold text-slate-700">
+                    Harga Produk
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value)}
+                    placeholder="Harga produk"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
 
               <textarea
                 value={description}
@@ -2250,26 +3106,37 @@ export default function AdminView() {
                 rows={3}
               />
 
-              <div className="mb-3 min-w-0 rounded-xl border border-dashed border-slate-300 p-3 sm:p-4">
-                <label className="mb-2 block font-bold">
-                  Foto Produk
+              <div className="mb-4 min-w-0 rounded-2xl border border-dashed border-green-300 bg-green-50/50 p-4 sm:p-5">
+                <div className="mb-3">
+                  <p className="font-bold text-green-900">Foto Produk</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Pilih foto produk agar pelanggan mudah mengenali menu.
+                  </p>
+                </div>
+                <label className="flex min-w-0 cursor-pointer flex-col items-center justify-center rounded-xl border border-green-100 bg-white px-3 py-5 text-center transition hover:bg-green-50">
+                  <span className="text-sm font-bold text-green-800">
+                    Pilih Foto Produk
+                  </span>
+                  <span className="mt-1 text-xs text-slate-500">
+                    Format gambar yang didukung perangkat
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handlePhotoChange}
+                    className="mt-3 block w-full min-w-0 max-w-full text-sm"
+                  />
                 </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoChange}
-                  className="block w-full min-w-0 max-w-full text-sm"
-                />
 
                 {(previewUrl || existingImageUrl) && (
-                  <div className="mt-3 min-w-0">
-                    <p className="mb-2 text-sm text-slate-500">
-                      Pratinjau foto:
+                  <div className="mt-4 min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+                    <p className="mb-2 text-sm font-semibold text-slate-700">
+                      Pratinjau Foto Produk
                     </p>
                     <img
                       src={previewUrl || existingImageUrl}
                       alt="Pratinjau produk"
-                      className="h-40 w-full max-w-full rounded-xl object-cover"
+                      className="max-h-64 w-full rounded-xl object-contain"
                     />
                     <button
                       type="button"
@@ -2277,7 +3144,7 @@ export default function AdminView() {
                         setSelectedFile(null);
                         setExistingImageUrl('');
                       }}
-                      className="mt-2 rounded-lg bg-red-100 px-3 py-2 text-sm text-red-700"
+                      className="mt-3 rounded-lg bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
                     >
                       Hapus Foto
                     </button>
@@ -2314,74 +3181,104 @@ export default function AdminView() {
                 </button>
               )}
             </section>
+            )}
 
             {/* DAFTAR MENU */}
-            <section id="daftar-menu-admin" className={sectionClass}>
-              <h2 className="mb-4 break-words text-lg font-bold text-green-900">
-                Daftar Produk ({menus.length})
-              </h2>
+            {activeSection === 'menu-admin' && (
+              <section id="daftar-menu-admin" className={sectionClass}>
+                <div className="mb-5">
+                  <h2 className="text-lg font-extrabold text-green-900">
+                    Daftar Produk
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Kelola informasi dan ketersediaan menu restoran.
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-green-800">
+                    {menus.length} produk terdaftar
+                  </p>
+                </div>
 
-              {menus.length === 0 ? (
-                <p className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
-                  Belum ada produk.
-                </p>
-              ) : (
-                <div className="min-w-0 divide-y divide-slate-100">
-                  {menus.map((menu) => (
-                    <article
-                      key={menu.id}
-                      className="flex min-w-0 flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        {menu.image_url && (
+                {menus.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
+                    <p className="font-semibold text-slate-600">
+                      Belum ada produk.
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Produk yang ditambahkan akan muncul di sini.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {menus.map((menu) => (
+                      <article
+                        key={menu.id}
+                        className="flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md"
+                      >
+                        {menu.image_url ? (
                           <img
                             src={menu.image_url}
                             alt={menu.name}
-                            className="h-16 w-16 shrink-0 rounded-lg object-cover"
+                            className="h-44 w-full bg-slate-100 object-cover"
                           />
+                        ) : (
+                          <div className="flex h-44 items-center justify-center bg-slate-100">
+                            <span className="text-sm font-medium text-slate-400">
+                              Foto belum tersedia
+                            </span>
+                          </div>
                         )}
 
-                        <div className="min-w-0">
-                          <p className="break-words font-bold text-slate-900">
-                            {menu.name}
-                          </p>
-                          <p className="break-words text-sm text-slate-500">
-                            {menu.category} · {rupiah(Number(menu.price) || 0)}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {menu.is_available ? 'Tersedia' : 'Tidak tersedia'}
-                          </p>
-                        </div>
-                      </div>
+                        <div className="flex min-w-0 flex-1 flex-col p-4">
+                          <div className="mb-2 flex items-start justify-between gap-2">
+                            <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold capitalize text-green-800">
+                              {menu.category}
+                            </span>
+                            <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+                              menu.is_available
+                                ? 'bg-green-100 text-green-800'
+                                : 'bg-red-100 text-red-700'
+                            }`}>
+                              {menu.is_available ? 'Tersedia' : 'Tidak tersedia'}
+                            </span>
+                          </div>
 
-                      <div className="grid min-w-0 grid-cols-1 gap-2 sm:w-auto sm:shrink-0 sm:grid-cols-3">
-                        <button
-                          type="button"
-                          onClick={() => startEdit(menu)}
-                          className="min-w-0 rounded-lg bg-blue-100 px-3 py-2 text-xs font-semibold text-blue-800"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => toggleAvailability(menu)}
-                          className="min-w-0 rounded-lg bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-800"
-                        >
-                          Ubah Status
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeMenu(menu)}
-                          className="min-w-0 rounded-lg bg-red-100 px-3 py-2 text-xs font-semibold text-red-700"
-                        >
-                          Hapus
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
+                          <h3 className="break-words text-base font-bold text-slate-900">
+                            {menu.name}
+                          </h3>
+                          <p className="mt-2 text-lg font-extrabold text-green-800">
+                            {rupiah(Number(menu.price) || 0)}
+                          </p>
+
+                          <div className="mt-auto grid grid-cols-3 gap-2 pt-4">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(menu)}
+                              className="rounded-lg bg-blue-50 px-2 py-2 text-xs font-bold text-blue-800 hover:bg-blue-100"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleAvailability(menu)}
+                              className="rounded-lg bg-amber-50 px-2 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                            >
+                              Ubah Status
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeMenu(menu)}
+                              className="rounded-lg bg-red-50 px-2 py-2 text-xs font-bold text-red-700 hover:bg-red-100"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </section>
+            )}
 
           </div>
         </div>
