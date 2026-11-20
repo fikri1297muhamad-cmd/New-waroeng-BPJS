@@ -254,6 +254,7 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
     order: Order;
     items: OrderItem[];
   } | null>(null);
+  const [cashReceived, setCashReceived] = useState('');
 
   const [reportFilter, setReportFilter] = useState<ReportFilter>('today');
   const [reportStartDate, setReportStartDate] = useState(getTodayWibKey());
@@ -864,6 +865,7 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
         };
       });
 
+      setCashReceived('');
       setReceipt({ order, items });
     } catch (err) {
       console.error('Gagal mengambil rincian struk:', err);
@@ -1809,6 +1811,17 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
   const handlePrintReceipt = () => {
     if (!receipt) return;
 
+    const order = receipt.order;
+    const total = Number(order.total_amount || 0);
+    const isCash = order.payment_method === 'tunai';
+    const received = Number(cashReceived || 0);
+
+    if (isCash && (!cashReceived.trim() || received < total)) {
+      setError('Uang diterima belum mencukupi total pembayaran.');
+      return;
+    }
+
+    const change = isCash ? received - total : 0;
     const printWindow = window.open('', '_blank', 'width=420,height=700');
 
     if (!printWindow) {
@@ -1816,71 +1829,142 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
       return;
     }
 
-    const order = receipt.order;
+    const escapeHtml = (value: unknown) =>
+      String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+      })[char] || char);
+
     const itemsHtml = receipt.items.map(item => `
       <div class="item">
-        <div>${item.item_name}</div>
-        <div class="sub">${item.quantity} x ${rupiah(item.item_price)}</div>
-        <div class="price">${rupiah(item.subtotal)}</div>
+        <div class="item-name">${escapeHtml(item.item_name)}</div>
+        <div class="item-detail">
+          <span>${Number(item.quantity)} x ${escapeHtml(rupiah(item.item_price))}</span>
+          <strong>${escapeHtml(rupiah(item.subtotal))}</strong>
+        </div>
       </div>
     `).join('');
+
+    const paymentHtml = isCash
+      ? `
+        <div class="row"><span>Uang Diterima</span><strong>${escapeHtml(rupiah(received))}</strong></div>
+        <div class="row"><span>Kembalian</span><strong>${escapeHtml(rupiah(change))}</strong></div>
+      `
+      : `<div class="row"><span>Metode Bayar</span><strong>Non-Tunai</strong></div>`;
 
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="UTF-8" />
-        <title>Struk ${order.order_code}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Struk ${escapeHtml(order.order_code)}</title>
         <style>
           * { box-sizing: border-box; }
+          @page { size: 58mm auto; margin: 0; }
+          html, body { width: 58mm; margin: 0; padding: 0; }
           body {
-            width: 75mm;
-            margin: 0 auto;
-            padding: 5mm;
-            color: #111;
+            padding: 3mm;
+            color: #000;
             font-family: Arial, sans-serif;
-            font-size: 12px;
+            font-size: 10px;
+            line-height: 1.35;
           }
-          .center { text-align: center; }
-          .brand { font-size: 18px; font-weight: 800; }
-          .small { font-size: 10px; line-height: 1.5; }
-          .line { border-top: 1px dashed #333; margin: 10px 0; }
-          .row { display: flex; justify-content: space-between; gap: 8px; margin: 5px 0; }
-          .item { margin: 8px 0; }
-          .sub { color: #555; font-size: 10px; margin-top: 2px; }
-          .price { text-align: right; font-weight: 700; margin-top: 2px; }
-          .total { font-size: 15px; font-weight: 800; }
-          .footer { margin-top: 15px; text-align: center; font-size: 10px; }
+          .header {
+            display: flex;
+            align-items: center;
+            gap: 2mm;
+          }
+          .logo {
+            width: 15mm;
+            height: 15mm;
+            object-fit: contain;
+            flex-shrink: 0;
+          }
+          .identity { min-width: 0; }
+          .brand { font-size: 14px; font-weight: 900; }
+          .address { font-size: 8px; line-height: 1.35; }
+          .receipt-title {
+            margin-top: 3mm;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 900;
+          }
+          .line { border-top: 1px dashed #000; margin: 2.5mm 0; }
+          .row {
+            display: grid;
+            grid-template-columns: 20mm 2mm minmax(0, 1fr);
+            gap: 0;
+            margin: 1mm 0;
+            align-items: start;
+          }
+          .row::before { content: ':'; grid-column: 2; }
+          .row span { grid-column: 1; }
+          .row strong {
+            grid-column: 3;
+            text-align: right;
+            overflow-wrap: anywhere;
+          }
+          .item { margin: 2mm 0; }
+          .item-name { font-weight: 700; overflow-wrap: anywhere; }
+          .item-detail {
+            display: flex;
+            justify-content: space-between;
+            gap: 2mm;
+            font-size: 9px;
+          }
+          .item-detail strong { text-align: right; }
+          .total { font-size: 12px; font-weight: 900; }
+          .footer {
+            margin-top: 4mm;
+            text-align: center;
+            font-size: 9px;
+            line-height: 1.5;
+          }
           @media print {
-            body { width: 75mm; margin: 0; }
+            html, body { width: 58mm; margin: 0; }
+            body { padding: 3mm; }
           }
         </style>
       </head>
       <body>
-        <div class="center">
-          <div class="brand">WAROENG BPJS</div>
-          <div class="small">
-            Jl. Kandangsapi 001/002 No. 01<br />
-            Desa Tanjungsari, Kecamatan Sukaluyu<br />
-            Kabupaten Cianjur
+        <div class="header">
+          <img class="logo" src="${window.location.origin}/logo.png" alt="Logo Waroeng BPJS" />
+          <div class="identity">
+            <div class="brand">WAROENG BPJS</div>
+            <div class="address">
+              Jl Kandang Sapi 001/002 No 01<br />
+              Desa Tanjungsari, Cianjur
+            </div>
           </div>
         </div>
+
+        <div class="receipt-title">STRUK PEMBAYARAN</div>
         <div class="line"></div>
-        <div class="row"><span>No. Pesanan</span><strong>${order.order_code}</strong></div>
-        <div class="row"><span>Pelanggan</span><strong>${order.customer_name}</strong></div>
-        <div class="row"><span>Meja</span><strong>${String(order.table_number).padStart(2, '0')}</strong></div>
-        <div class="row"><span>Waktu</span><strong>${formatDate(order.created_at)}</strong></div>
+
+        <div class="row"><span>No. Pesanan</span><strong>${escapeHtml(order.order_code)}</strong></div>
+        <div class="row"><span>Tanggal</span><strong>${escapeHtml(formatDate(order.created_at))}</strong></div>
+        <div class="row"><span>Pelanggan</span><strong>${escapeHtml(order.customer_name)}</strong></div>
+        <div class="row"><span>Nomor Meja</span><strong>${escapeHtml(String(order.table_number).padStart(2, '0'))}</strong></div>
+        <div class="row"><span>Kasir</span><strong>${escapeHtml(cashierProfile?.full_name || 'Kasir')}</strong></div>
+
         <div class="line"></div>
         ${itemsHtml}
         <div class="line"></div>
-        <div class="row total"><span>TOTAL</span><span>${rupiah(Number(order.total_amount || 0))}</span></div>
-        <div class="row"><span>Pembayaran</span><strong>${order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}</strong></div>
-        <div class="row"><span>Metode</span><strong>${order.payment_method === 'tunai' ? 'Tunai' : order.payment_method === 'non_tunai' ? 'Non-Tunai' : '-'}</strong></div>
+
+        <div class="row total"><span>TOTAL</span><strong>${escapeHtml(rupiah(total))}</strong></div>
+        <div class="row"><span>Metode Bayar</span><strong>${isCash ? 'Tunai' : 'Non-Tunai'}</strong></div>
+        ${paymentHtml}
+
         <div class="line"></div>
         <div class="footer">
-          Terima kasih telah berkunjung.<br />
-          Selamat menikmati pesanan Anda.
+          <strong>TERIMA KASIH</strong><br />
+          Selamat menikmati hidangan Anda.
         </div>
+
         <script>
           window.onload = function() {
             window.print();
@@ -2356,38 +2440,42 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
               </button>
             </div>
 
-            <div className="mx-auto max-h-[60vh] max-w-[280px] overflow-y-auto border border-dashed border-gray-300 bg-white p-4 text-xs text-gray-800">
-              <div className="text-center">
-                <p className="text-base font-extrabold">WAROENG BPJS</p>
-                <p className="mt-1 leading-relaxed">
-                  Jl. Kandangsapi 001/002 No. 01<br />
-                  Desa Tanjungsari, Kecamatan Sukaluyu<br />
-                  Kabupaten Cianjur
-                </p>
+            <div className="mx-auto max-h-[55vh] max-w-[280px] overflow-y-auto border border-dashed border-gray-300 bg-white p-3 text-xs text-gray-800">
+              <div className="flex items-center gap-2">
+                <img src="/logo.png" alt="Logo Waroeng BPJS" className="h-14 w-14 shrink-0 object-contain" />
+                <div className="min-w-0">
+                  <p className="text-sm font-black">WAROENG BPJS</p>
+                  <p className="text-[10px] leading-relaxed">
+                    Jl Kandang Sapi 001/002 No 01<br />
+                    Desa Tanjungsari, Cianjur
+                  </p>
+                </div>
               </div>
 
-              <div className="my-3 border-t border-dashed border-gray-400" />
+              <p className="mt-3 text-center font-extrabold">STRUK PEMBAYARAN</p>
+              <div className="my-2 border-t border-dashed border-gray-400" />
 
               <div className="space-y-1">
-                <p>No: {receipt.order.order_code}</p>
-                <p>Pelanggan: {receipt.order.customer_name}</p>
-                <p>Meja: {String(receipt.order.table_number).padStart(2, '0')}</p>
-                <p>Waktu: {formatDate(receipt.order.created_at)}</p>
+                <p>No. Pesanan : {receipt.order.order_code}</p>
+                <p>Tanggal : {formatDate(receipt.order.created_at)}</p>
+                <p className="break-words">Pelanggan : {receipt.order.customer_name}</p>
+                <p>Nomor Meja : {String(receipt.order.table_number).padStart(2, '0')}</p>
+                <p>Kasir : {cashierProfile?.full_name || 'Kasir'}</p>
               </div>
 
-              <div className="my-3 border-t border-dashed border-gray-400" />
+              <div className="my-2 border-t border-dashed border-gray-400" />
 
               {receipt.items.map((item, index) => (
-                <div key={`${item.item_name}-${index}`} className="mb-3">
-                  <p className="font-bold">{item.item_name}</p>
+                <div key={`${item.item_name}-${index}`} className="mb-2">
+                  <p className="break-words font-bold">{item.item_name}</p>
                   <div className="flex justify-between gap-2">
                     <span>{item.quantity} × {rupiah(item.item_price)}</span>
-                    <span className="font-bold">{rupiah(item.subtotal)}</span>
+                    <span className="text-right font-bold">{rupiah(item.subtotal)}</span>
                   </div>
                 </div>
               ))}
 
-              <div className="my-3 border-t border-dashed border-gray-400" />
+              <div className="my-2 border-t border-dashed border-gray-400" />
 
               <div className="flex justify-between gap-2 text-sm font-extrabold">
                 <span>TOTAL</span>
@@ -2395,22 +2483,51 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
               </div>
 
               <p className="mt-2">
-                Pembayaran: {receipt.order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
-              </p>
-              <p>
-                Metode: {receipt.order.payment_method === 'tunai'
-                  ? 'Tunai'
-                  : receipt.order.payment_method === 'non_tunai'
-                    ? 'Non-Tunai'
-                    : '-'}
+                Metode Bayar: {receipt.order.payment_method === 'tunai' ? 'Tunai' : 'Non-Tunai'}
               </p>
 
-              <div className="my-3 border-t border-dashed border-gray-400" />
-              <p className="text-center leading-relaxed">
-                Terima kasih telah berkunjung.<br />
-                Selamat menikmati pesanan Anda.
-              </p>
+              {receipt.order.payment_method === 'tunai' && (
+                <>
+                  <div className="mt-2 flex justify-between gap-2">
+                    <span>Uang Diterima</span>
+                    <span className="font-bold">{rupiah(Number(cashReceived || 0))}</span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span>Kembalian</span>
+                    <span className="font-bold">
+                      {rupiah(Math.max(0, Number(cashReceived || 0) - Number(receipt.order.total_amount || 0)))}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              <div className="my-2 border-t border-dashed border-gray-400" />
+              <p className="text-center font-extrabold">TERIMA KASIH</p>
+              <p className="text-center leading-relaxed">Selamat menikmati hidangan Anda.</p>
             </div>
+
+            {receipt.order.payment_method === 'tunai' && (
+              <div className="mx-auto mt-4 max-w-[280px]">
+                <label className="mb-1 block text-sm font-bold text-gray-800">
+                  Uang Diterima (Rp)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1000"
+                  inputMode="numeric"
+                  value={cashReceived}
+                  onChange={event => setCashReceived(event.target.value)}
+                  placeholder="Masukkan uang dari pelanggan"
+                  className="w-full rounded-xl border border-gray-300 px-3 py-3 text-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
+                />
+                {Number(cashReceived || 0) < Number(receipt.order.total_amount || 0) && (
+                  <p className="mt-2 text-xs font-medium text-red-600">
+                    Uang diterima belum mencukupi total pembayaran.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button
@@ -2423,7 +2540,12 @@ export default function KasirView({ onLogout }: { onLogout: () => void }) {
               <button
                 type="button"
                 onClick={handlePrintReceipt}
-                className="rounded-xl bg-green-800 px-4 py-3 text-sm font-extrabold text-white"
+                disabled={
+                  receipt.order.payment_method === 'tunai' &&
+                  (!cashReceived.trim() ||
+                    Number(cashReceived) < Number(receipt.order.total_amount || 0))
+                }
+                className="rounded-xl bg-green-800 px-4 py-3 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:bg-gray-400"
               >
                 CETAK STRUK
               </button>
