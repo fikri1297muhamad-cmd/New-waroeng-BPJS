@@ -2173,11 +2173,16 @@ export default function AdminView() {
                         <p className="text-[10px] text-slate-500">{menuPercent.toFixed(1)}% target</p>
                       </div>
                     </div>
-                    <div className="w-full min-w-0 space-y-2 sm:max-w-[210px]">
+                    <div className="w-full min-w-0 flex-1 space-y-2">
                       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
                         Keterangan setiap menu
                       </p>
-                      {menuTodayCounts.length > 0 ? menuTodayCounts.map((menu, index) => {
+                      {menuTodayCounts.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-x-3 sm:gap-x-5 gap-y-2">
+                          {[0, 1].map((group) => (
+                            <div key={group} className="min-w-0 space-y-2">
+                              {menuTodayCounts.slice(group * 20, (group + 1) * 20).map((menu, offset) => {
+                                const index = group * 20 + offset;
                         const menuColors = [
                           '#2563EB', '#16A34A', '#D97706', '#9333EA',
                           '#E11D48', '#0891B2', '#65A30D', '#C026D3',
@@ -2195,7 +2200,11 @@ export default function AdminView() {
                             <span className="shrink-0 text-slate-500">{menu.soldQuantity}/100 ({Math.min(100, menu.soldQuantity).toFixed(0)}%)</span>
                           </div>
                         );
-                      }) : (
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
                         <p className="text-xs text-slate-400">Daftar menu akan ditampilkan di sini.</p>
                       )}
                       <p className="pt-1 text-xs text-slate-400">
