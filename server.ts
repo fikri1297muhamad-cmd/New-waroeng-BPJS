@@ -1,16 +1,16 @@
 import express from 'express';
-import adminAccessHandler from './api/admin-access.ts';
-import createCashierHandler from './api/create-cashier.ts';
-import listCashiersHandler from './api/list-cashiers.ts';
-import archiveOrderHandler from './api/archive-order.ts';
-import trashOrderHandler from './api/trash-order.ts';
-import restoreOrderHandler from './api/restore-order.ts';
-import deleteTrashedOrderHandler from './api/delete-trashed-order.ts';
-import updateCashierHandler from './api/update-cashier.ts';
-import setCashierStatusHandler from './api/set-cashier-status.ts';
-import updateTableStatusHandler from './api/update-table-status.ts';
-import recordPaymentHandler from './api/record-payment.ts';
-import previewTableMigrationHandler from './api/preview-table-migration.ts';
+import adminAccessHandler from './api-handlers/admin-access.ts';
+import createCashierHandler from './api-handlers/create-cashier.ts';
+import listCashiersHandler from './api-handlers/list-cashiers.ts';
+import archiveOrderHandler from './api-handlers/archive-order.ts';
+import trashOrderHandler from './api-handlers/trash-order.ts';
+import restoreOrderHandler from './api-handlers/restore-order.ts';
+import deleteTrashedOrderHandler from './api-handlers/delete-trashed-order.ts';
+import updateCashierHandler from './api-handlers/update-cashier.ts';
+import setCashierStatusHandler from './api-handlers/set-cashier-status.ts';
+import updateTableStatusHandler from './api-handlers/update-table-status.ts';
+import recordPaymentHandler from './api-handlers/record-payment.ts';
+import previewTableMigrationHandler from './api-handlers/preview-table-migration.ts';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { Request, Response } from 'express';
 

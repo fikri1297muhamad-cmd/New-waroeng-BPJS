@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/:route",
+      "destination": "/api/[route]"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
