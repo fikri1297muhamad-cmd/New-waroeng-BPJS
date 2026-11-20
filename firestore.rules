@@ -39,8 +39,8 @@ service cloud.firestore {
     }
 
     match /staff_profiles/{userId} {
-      allow read: if signedIn()
-        && request.auth.uid == userId;
+      allow read: if isAdmin()
+        || (signedIn() && request.auth.uid == userId);
 
       allow write: if false;
     }

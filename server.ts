@@ -1,5 +1,13 @@
 import express from 'express';
 import adminAccessHandler from './api/admin-access.ts';
+import createCashierHandler from './api/create-cashier.ts';
+import listCashiersHandler from './api/list-cashiers.ts';
+import archiveOrderHandler from './api/archive-order.ts';
+import trashOrderHandler from './api/trash-order.ts';
+import restoreOrderHandler from './api/restore-order.ts';
+import deleteTrashedOrderHandler from './api/delete-trashed-order.ts';
+import updateCashierHandler from './api/update-cashier.ts';
+import setCashierStatusHandler from './api/set-cashier-status.ts';
 import updateTableStatusHandler from './api/update-table-status.ts';
 import recordPaymentHandler from './api/record-payment.ts';
 import previewTableMigrationHandler from './api/preview-table-migration.ts';
@@ -48,6 +56,124 @@ app.post('/api/preview-table-migration', (req: Request, res: Response) => {
 });
 
 app.all('/api/preview-table-migration', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+
+
+app.post('/api/archive-order', (req: Request, res: Response) => {
+  void archiveOrderHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+app.all('/api/archive-order', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/delete-trashed-order', (req: Request, res: Response) => {
+  void deleteTrashedOrderHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+app.all('/api/delete-trashed-order', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/restore-order', (req: Request, res: Response) => {
+  void restoreOrderHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+app.all('/api/restore-order', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/trash-order', (req: Request, res: Response) => {
+  void trashOrderHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+app.all('/api/trash-order', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/list-cashiers', (req: Request, res: Response) => {
+  void listCashiersHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+
+app.all('/api/list-cashiers', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/update-cashier', (req: Request, res: Response) => {
+  void updateCashierHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+
+app.all('/api/update-cashier', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/set-cashier-status', (req: Request, res: Response) => {
+  void setCashierStatusHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+
+app.all('/api/set-cashier-status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, private');
+  res.status(405).json({
+    success: false,
+    error: 'Metode tidak diizinkan.'
+  });
+});
+
+app.post('/api/create-cashier', (req: Request, res: Response) => {
+  void createCashierHandler(
+    req as unknown as VercelRequest,
+    res as unknown as VercelResponse
+  );
+});
+
+app.all('/api/create-cashier', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store, private');
   res.status(405).json({
     success: false,

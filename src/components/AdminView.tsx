@@ -112,6 +112,10 @@ type AdminOrder = {
   created_at: Date;
   table_session_id?: string;
   cashier_archived_at?: any;
+  admin_archived_at?: any;
+  admin_archived_by?: string;
+  admin_trashed_at?: any;
+  admin_trashed_by?: string;
   items: AdminOrderItem[];
 };
 
@@ -269,12 +273,49 @@ export default function AdminView() {
   const [orderMessage, setOrderMessage] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
   const [orderFilter, setOrderFilter] = useState('semua');
+  const [archiveSearch, setArchiveSearch] = useState('');
+  const [archiveDateFrom, setArchiveDateFrom] = useState('');
+  const [archiveDateTo, setArchiveDateTo] = useState('');
+  const [trashSearch, setTrashSearch] = useState('');
+  const [trashDateFrom, setTrashDateFrom] = useState('');
+  const [trashDateTo, setTrashDateTo] = useState('');
+  const [expandedArchiveOrderId, setExpandedArchiveOrderId] = useState('');
   const [paymentMethods, setPaymentMethods] = useState<Record<string, string>>({});
   const [processingOrderId, setProcessingOrderId] = useState('');
+  const [processingArchiveOrderId, setProcessingArchiveOrderId] = useState('');
+  const [processingTrashOrderId, setProcessingTrashOrderId] = useState('');
+  const [selectedTrashOrderId, setSelectedTrashOrderId] = useState('');
+  const [processingRestoreOrderId, setProcessingRestoreOrderId] = useState('');
+  const [processingDeleteOrderId, setProcessingDeleteOrderId] = useState('');
 
   // Data akun staf.
   const [staffProfiles, setStaffProfiles] = useState<StaffProfile[]>([]);
   const [staffError, setStaffError] = useState('');
+
+  const [cashierAccounts, setCashierAccounts] = useState<
+    { uid: string; full_name: string; email: string; disabled: boolean }[]
+  >([]);
+  const [cashierAccountsLoading, setCashierAccountsLoading] = useState(false);
+  const [cashierAccountsError, setCashierAccountsError] = useState('');
+
+  const [selectedCashierId, setSelectedCashierId] = useState('');
+  const [editingCashierName, setEditingCashierName] = useState('');
+  const [editingCashierEmail, setEditingCashierEmail] = useState('');
+  const [editingCashierPassword, setEditingCashierPassword] = useState('');
+  const [showEditingCashierPassword, setShowEditingCashierPassword] = useState(false);
+  const [savingCashierEdit, setSavingCashierEdit] = useState(false);
+  const [cashierManagementMessage, setCashierManagementMessage] = useState('');
+  const [cashierManagementError, setCashierManagementError] = useState('');
+  const [processingCashierStatusId, setProcessingCashierStatusId] = useState('');
+
+  const [cashierName, setCashierName] = useState('');
+  const [cashierEmail, setCashierEmail] = useState('');
+  const [cashierPassword, setCashierPassword] = useState('');
+  const [showCashierPassword, setShowCashierPassword] = useState(false);
+  const [creatingCashier, setCreatingCashier] = useState(false);
+  const [cashierCreateMessage, setCashierCreateMessage] = useState('');
+  const [cashierCreateError, setCashierCreateError] = useState('');
+
   const [cashierPresence, setCashierPresence] = useState<
     { id: string; full_name: string; lastSeen: number }[]
   >([]);
@@ -343,6 +384,10 @@ export default function AdminView() {
             created_at: toDate(raw.created_at) || new Date(0),
             table_session_id: String(raw.table_session_id ?? ''),
             cashier_archived_at: raw.cashier_archived_at ?? null,
+            admin_archived_at: raw.admin_archived_at ?? null,
+            admin_archived_by: String(raw.admin_archived_by ?? ''),
+            admin_trashed_at: raw.admin_trashed_at ?? null,
+            admin_trashed_by: String(raw.admin_trashed_by ?? ''),
             items: []
           } satisfies AdminOrder;
         });
@@ -460,6 +505,55 @@ export default function AdminView() {
     );
 
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadCashierAccounts = async () => {
+      setCashierAccountsLoading(true);
+      setCashierAccountsError('');
+
+      try {
+        const user = getAuth().currentUser;
+        if (!user) throw new Error('Sesi login tidak ditemukan.');
+
+        const token = await user.getIdToken(true);
+        const response = await fetch('/api/list-cashiers', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({})
+        });
+
+        const result = await response.json();
+        if (!response.ok || result.success !== true) {
+          throw new Error(result.error || 'Daftar akun kasir gagal dimuat.');
+        }
+
+        if (!cancelled) {
+          setCashierAccounts(
+            Array.isArray(result.accounts) ? result.accounts : []
+          );
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setCashierAccountsError(
+            error?.message || 'Daftar akun kasir gagal dimuat.'
+          );
+        }
+      } finally {
+        if (!cancelled) setCashierAccountsLoading(false);
+      }
+    };
+
+    void loadCashierAccounts();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1167,8 +1261,53 @@ export default function AdminView() {
         order.payment_status === 'lunas') ||
       order.status === orderFilter;
 
-    return matchesSearch && matchesFilter;
+    return !order.admin_archived_at && !order.admin_trashed_at && matchesSearch && matchesFilter;
   });
+
+  const archivedOrders = ordersWithItems.filter((order) => {
+    if (!order.admin_archived_at || order.admin_trashed_at) return false;
+
+    const search = archiveSearch.trim().toLowerCase();
+    const matchesSearch =
+      !search ||
+      order.order_code.toLowerCase().includes(search) ||
+      order.customer_name.toLowerCase().includes(search) ||
+      String(order.table_number).includes(search);
+
+    const orderDate = localDateString(order.created_at);
+    const matchesFrom = !archiveDateFrom || orderDate >= archiveDateFrom;
+    const matchesTo = !archiveDateTo || orderDate <= archiveDateTo;
+
+    return matchesSearch && matchesFrom && matchesTo;
+  });
+
+  const trashedOrders = ordersWithItems.filter((order) => {
+    if (!order.admin_trashed_at) return false;
+
+    const search = trashSearch.trim().toLowerCase();
+    const matchesSearch =
+      !search ||
+      order.order_code.toLowerCase().includes(search) ||
+      order.customer_name.toLowerCase().includes(search) ||
+      String(order.table_number).includes(search);
+
+    const orderDate = localDateString(order.created_at);
+    const matchesFrom = !trashDateFrom || orderDate >= trashDateFrom;
+    const matchesTo = !trashDateTo || orderDate <= trashDateTo;
+
+    return matchesSearch && matchesFrom && matchesTo;
+  });
+
+  const archivedOrdersByYear = archivedOrders.reduce<
+    Record<string, Record<string, AdminOrder[]>>
+  >((groups, order) => {
+    const year = String(order.created_at.getFullYear());
+    const month = String(order.created_at.getMonth() + 1).padStart(2, '0');
+    groups[year] ??= {};
+    groups[year][month] ??= [];
+    groups[year][month].push(order);
+    return groups;
+  }, {});
 
   const updateOrderStatus = async (
     order: AdminOrder,
@@ -1192,6 +1331,181 @@ export default function AdminView() {
       );
     } finally {
       setProcessingOrderId('');
+    }
+  };
+
+  const trashOrder = async (order: AdminOrder) => {
+    const confirmed = window.confirm(
+      `Pindahkan pesanan ${order.order_code || order.id} ke Sampah?`
+    );
+    if (!confirmed) return;
+
+    setOrderMessage('');
+    setProcessingTrashOrderId(order.id);
+
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        throw new Error('Sesi login tidak ditemukan. Silakan login kembali.');
+      }
+
+      const token = await user.getIdToken(true);
+      const response = await fetch('/api/trash-order', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ order_id: order.id })
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Pesanan gagal dipindahkan ke Sampah.');
+      }
+
+      setOrderMessage(
+        `Pesanan ${order.order_code || order.id} berhasil dipindahkan ke Sampah.`
+      );
+    } catch (error: any) {
+      setOrderMessage(
+        error?.message || 'Pesanan gagal dipindahkan ke Sampah.'
+      );
+    } finally {
+      setProcessingTrashOrderId('');
+    }
+  };
+
+  const restoreOrder = async (order: AdminOrder) => {
+    const confirmed = window.confirm(
+      `Pulihkan pesanan ${order.order_code || order.id} ke Manajemen Pesanan?`
+    );
+    if (!confirmed) return;
+
+    setOrderMessage('');
+    setProcessingRestoreOrderId(order.id);
+
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        throw new Error('Sesi login tidak ditemukan. Silakan login kembali.');
+      }
+
+      const token = await user.getIdToken(true);
+      const response = await fetch('/api/restore-order', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ order_id: order.id })
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Pesanan gagal dipulihkan dari Sampah.');
+      }
+
+      setSelectedTrashOrderId('');
+      setOrderMessage(
+        `Pesanan ${order.order_code || order.id} berhasil dipulihkan ke Manajemen Pesanan.`
+      );
+    } catch (error: any) {
+      setOrderMessage(
+        error?.message || 'Pesanan gagal dipulihkan dari Sampah.'
+      );
+    } finally {
+      setProcessingRestoreOrderId('');
+    }
+  };
+
+  const permanentlyDeleteOrder = async (order: AdminOrder) => {
+    const confirmed = window.confirm(
+      `PERINGATAN: Hapus permanen pesanan ${order.order_code || order.id} milik ${order.customer_name}? Data pesanan dan seluruh rincian itemnya tidak dapat dikembalikan.`
+    );
+    if (!confirmed) return;
+
+    setOrderMessage('');
+    setProcessingDeleteOrderId(order.id);
+
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        throw new Error('Sesi login tidak ditemukan. Silakan login kembali.');
+      }
+
+      const token = await user.getIdToken(true);
+      const response = await fetch('/api/delete-trashed-order', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ order_id: order.id })
+      });
+
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Pesanan gagal dihapus permanen.');
+      }
+
+      setSelectedTrashOrderId('');
+      setOrderMessage(
+        `Pesanan ${order.order_code || order.id} dan ${result.deletedItems} rincian item berhasil dihapus permanen.`
+      );
+    } catch (error: any) {
+      setOrderMessage(
+        error?.message || 'Pesanan gagal dihapus permanen.'
+      );
+    } finally {
+      setProcessingDeleteOrderId('');
+    }
+  };
+
+  const archiveOrder = async (order: AdminOrder) => {
+    const confirmed = window.confirm(
+      `Pindahkan pesanan ${order.order_code || order.id} ke Arsip Pesanan?`
+    );
+    if (!confirmed) return;
+
+    setOrderMessage('');
+    setProcessingArchiveOrderId(order.id);
+
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        throw new Error('Sesi login tidak ditemukan. Silakan login kembali.');
+      }
+
+      const idToken = await user.getIdToken(true);
+      const response = await fetch('/api/archive-order', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({ order_id: order.id })
+      });
+
+      const result = await response.json();
+      if (!response.ok || result.success !== true) {
+        throw new Error(result.error || 'Pesanan gagal dipindahkan ke Arsip.');
+      }
+
+      setOrderMessage(
+        `Pesanan ${order.order_code || order.id} berhasil dipindahkan ke Arsip.`
+      );
+    } catch (err) {
+      console.error(err);
+      setOrderMessage(
+        err instanceof Error ? err.message : 'Pesanan gagal dipindahkan ke Arsip.'
+      );
+    } finally {
+      setProcessingArchiveOrderId('');
     }
   };
 
@@ -1249,8 +1563,78 @@ export default function AdminView() {
     (banner) => banner.is_active
   ).length;
 
-  // Perhitungan laporan hanya menggunakan pesanan yang terbaca dari Firestore.
+  // Data empat diagram Dashboard berdasarkan tanggal WIB.
+  const todayWib = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
+
+  const todayOrders = ordersWithItems.filter((order) => {
+    const date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Jakarta',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(order.created_at);
+
+    return date === todayWib;
+  });
+
+  const paidTodayOrders = todayOrders.filter(
+    (order) => order.payment_status === 'lunas'
+  );
+
+  const unpaidTodayOrders = todayOrders.filter(
+    (order) => order.payment_status === 'belum_lunas'
+  );
+
+  const todayRevenue = paidTodayOrders.reduce(
+    (total, order) => total + (Number(order.total_amount) || 0),
+    0
+  );
+
+  const revenuePercent = Math.min(100, todayRevenue / 1000000 * 100);
+  const todayOrderCount = todayOrders.length;
+  const orderPercent = Math.min(100, todayOrderCount);
+
+  const todayPaidCount = paidTodayOrders.length;
+  const todayUnpaidCount = unpaidTodayOrders.length;
+  const paymentTotal = todayPaidCount + todayUnpaidCount;
+  const paidPercent = paymentTotal
+    ? todayPaidCount / paymentTotal * 100
+    : 0;
+
+  const menuTodayCounts = menus.map((menu) => {
+    const quantity = paidTodayOrders.reduce((total, order) => {
+      return total + order.items.reduce((itemTotal, item) => {
+        const matchesMenu = item.menu_id != null
+          ? String(item.menu_id) === String(menu.id)
+          : item.item_name === menu.name;
+
+        return itemTotal + (matchesMenu ? Number(item.quantity) || 0 : 0);
+      }, 0);
+    }, 0);
+
+    return { ...menu, soldQuantity: quantity };
+  });
+
+  const totalMenuSold = menuTodayCounts.reduce(
+    (total, menu) => total + menu.soldQuantity,
+    0
+  );
+
+  const menuTarget = menus.length * 100;
+  const menuPercent = menuTarget
+    ? Math.min(100, totalMenuSold / menuTarget * 100)
+    : 0;
+
+  // Laporan memakai data Firestore realtime.
+  // Pesanan Arsip tetap dihitung, sedangkan pesanan Sampah dikecualikan.
   const reportOrders = ordersWithItems.filter((order) => {
+    if (order.admin_trashed_at) return false;
+
     const date = localDateString(order.created_at);
 
     if (reportStart && date < reportStart) return false;
@@ -1325,6 +1709,8 @@ export default function AdminView() {
       if (
         Number(order.table_number) !== tableNumber ||
         order.cashier_archived_at ||
+        order.admin_archived_at ||
+        order.admin_trashed_at ||
         storedStatus === 'kosong'
       ) return false;
 
@@ -1361,7 +1747,258 @@ export default function AdminView() {
     };
   });
 
+  const handleCreateCashier = async () => {
+    setCashierCreateMessage('');
+    setCashierCreateError('');
+
+    const fullName = cashierName.trim();
+    const email = cashierEmail.trim().toLowerCase();
+
+    if (fullName.length < 2 || fullName.length > 80) {
+      setCashierCreateError('Nama lengkap harus 2–80 karakter.');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setCashierCreateError('Masukkan alamat email yang valid.');
+      return;
+    }
+
+    if (cashierPassword.length < 8) {
+      setCashierCreateError('Kata sandi minimal 8 karakter.');
+      return;
+    }
+
+    const user = getAuth().currentUser;
+    if (!user) {
+      setCashierCreateError('Sesi Admin tidak ditemukan. Silakan masuk kembali.');
+      return;
+    }
+
+    setCreatingCashier(true);
+
+    try {
+      const token = await user.getIdToken(true);
+      const response = await fetch('/api/create-cashier', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          full_name: fullName,
+          email,
+          password: cashierPassword
+        })
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Akun kasir gagal dibuat.');
+      }
+
+      setCashierName('');
+      setCashierEmail('');
+      setCashierPassword('');
+      setShowCashierPassword(false);
+      setCashierCreateMessage(`Akun kasir ${fullName} berhasil dibuat.`);
+    } catch (error) {
+      setCashierCreateError(
+        error instanceof Error ? error.message : 'Terjadi kesalahan saat membuat akun.'
+      );
+    } finally {
+      setCreatingCashier(false);
+    }
+  };
+
+  const handleSelectCashier = (account: {
+    uid: string;
+    full_name: string;
+    email: string;
+    disabled: boolean;
+  }) => {
+    const profile = staffProfiles.find((item) => item.id === account.uid);
+    if (!profile || profile.role.trim().toLowerCase() !== 'kasir') return;
+
+    setSelectedCashierId(account.uid);
+    setEditingCashierName(account.full_name);
+    setEditingCashierEmail(account.email);
+    setEditingCashierPassword('');
+    setShowEditingCashierPassword(false);
+    setCashierManagementMessage('');
+    setCashierManagementError('');
+  };
+
+  const handleUpdateCashier = async () => {
+    setCashierManagementMessage('');
+    setCashierManagementError('');
+
+    const account = cashierAccounts.find(
+      (item) => item.uid === selectedCashierId
+    );
+    const profile = staffProfiles.find(
+      (item) => item.id === selectedCashierId
+    );
+
+    if (!account || !profile || profile.role.trim().toLowerCase() !== 'kasir') {
+      setCashierManagementError('Pilih akun kasir yang valid terlebih dahulu.');
+      return;
+    }
+
+    const fullName = editingCashierName.trim();
+    const email = editingCashierEmail.trim().toLowerCase();
+
+    if (fullName.length < 2 || fullName.length > 80) {
+      setCashierManagementError('Nama lengkap harus 2–80 karakter.');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setCashierManagementError('Masukkan alamat email yang valid.');
+      return;
+    }
+
+    if (
+      editingCashierPassword &&
+      (editingCashierPassword.length < 8 || editingCashierPassword.length > 128)
+    ) {
+      setCashierManagementError('Kata sandi baru harus 8–128 karakter.');
+      return;
+    }
+
+    const user = getAuth().currentUser;
+    if (!user) {
+      setCashierManagementError('Sesi Admin tidak ditemukan. Silakan masuk kembali.');
+      return;
+    }
+
+    setSavingCashierEdit(true);
+
+    try {
+      const token = await user.getIdToken(true);
+      const body: {
+        uid: string;
+        full_name: string;
+        email: string;
+        password?: string;
+      } = {
+        uid: account.uid,
+        full_name: fullName,
+        email
+      };
+
+      if (editingCashierPassword) {
+        body.password = editingCashierPassword;
+      }
+
+      const response = await fetch('/api/update-cashier', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Perubahan akun kasir gagal disimpan.');
+      }
+
+      setCashierAccounts((current) =>
+        current.map((item) =>
+          item.uid === account.uid
+            ? { ...item, full_name: fullName, email }
+            : item
+        )
+      );
+      setStaffProfiles((current) =>
+        current.map((item) =>
+          item.id === account.uid ? { ...item, full_name: fullName } : item
+        )
+      );
+      setEditingCashierPassword('');
+      setShowEditingCashierPassword(false);
+      setCashierManagementMessage('Data akun kasir berhasil diperbarui.');
+    } catch (error) {
+      setCashierManagementError(
+        error instanceof Error ? error.message : 'Terjadi kesalahan saat memperbarui akun.'
+      );
+    } finally {
+      setSavingCashierEdit(false);
+    }
+  };
+
+  const handleToggleCashierStatus = async (account: {
+    uid: string;
+    full_name: string;
+    email: string;
+    disabled: boolean;
+  }) => {
+    const profile = staffProfiles.find((item) => item.id === account.uid);
+    if (!profile || profile.role.trim().toLowerCase() !== 'kasir') {
+      setCashierManagementError('Hanya akun kasir yang dapat diubah statusnya.');
+      return;
+    }
+
+    const nextDisabled = !account.disabled;
+    const action = nextDisabled ? 'menonaktifkan' : 'mengaktifkan kembali';
+
+    if (!window.confirm(
+      `Apakah Anda yakin ingin ${action} akun kasir ${account.full_name}?`
+    )) return;
+
+    setCashierManagementMessage('');
+    setCashierManagementError('');
+    setProcessingCashierStatusId(account.uid);
+
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error('Sesi Admin tidak ditemukan. Silakan masuk kembali.');
+
+      const token = await user.getIdToken(true);
+      const response = await fetch('/api/set-cashier-status', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          uid: account.uid,
+          disabled: nextDisabled
+        })
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Status akun kasir gagal diperbarui.');
+      }
+
+      setCashierAccounts((current) =>
+        current.map((item) =>
+          item.uid === account.uid
+            ? { ...item, disabled: nextDisabled }
+            : item
+        )
+      );
+      setCashierManagementMessage(
+        nextDisabled
+          ? 'Akun kasir berhasil dinonaktifkan.'
+          : 'Akun kasir berhasil diaktifkan kembali.'
+      );
+    } catch (error) {
+      setCashierManagementError(
+        error instanceof Error ? error.message : 'Terjadi kesalahan saat mengubah status akun.'
+      );
+    } finally {
+      setProcessingCashierStatusId('');
+    }
+  };
+
   return (
+
+
+
     <main className="min-h-screen w-full min-w-0 overflow-x-clip bg-slate-50 p-2 sm:p-4 lg:p-5">
       <div className="mx-auto w-full min-w-0 max-w-[1600px]">
 
@@ -1487,10 +2124,14 @@ export default function AdminView() {
                     Target omzet Rp1.000.000 setiap hari
                   </p>
                   <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:justify-center">
-                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
-                      <div className="text-center">
+                    <div
+                      className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[18px]"
+                      style={{ background: `conic-gradient(#16a34a ${revenuePercent}%, #e2e8f0 0)` }}
+                    >
+                      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center">
                         <p className="text-xs font-semibold text-slate-500">Omzet hari ini</p>
-                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                        <p className="mt-1 text-sm font-extrabold text-green-700">{revenuePercent.toFixed(1)}%</p>
+                        <p className="text-[10px] text-slate-500">Rp{todayRevenue.toLocaleString('id-ID')}</p>
                       </div>
                     </div>
                     <div className="w-full min-w-0 space-y-3 sm:max-w-[190px]">
@@ -1498,14 +2139,14 @@ export default function AdminView() {
                         <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-green-600" />
                         <div>
                           <p className="font-semibold text-slate-800">Omzet tercapai</p>
-                          <p className="text-xs text-slate-500">Persentase dari target harian</p>
+                          <p className="text-xs text-slate-500">Rp{todayRevenue.toLocaleString('id-ID')} ({revenuePercent.toFixed(1)}%)</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2 text-sm">
                         <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-slate-200" />
                         <div>
                           <p className="font-semibold text-slate-800">Sisa target</p>
-                          <p className="text-xs text-slate-500">Bagian target yang belum tercapai</p>
+                          <p className="text-xs text-slate-500">Rp{Math.max(0, 1000000 - todayRevenue).toLocaleString('id-ID')}</p>
                         </div>
                       </div>
                       <p className="text-xs text-slate-400">Omzet dihitung dari transaksi LUNAS.</p>
@@ -1522,17 +2163,21 @@ export default function AdminView() {
                     Target 100 porsi untuk setiap menu per hari
                   </p>
                   <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:items-start sm:justify-center">
-                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
-                      <div className="text-center">
-                        <p className="text-xs font-semibold text-slate-500">Menu hari ini</p>
-                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                    <div
+                      className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[18px]"
+                      style={{ background: `conic-gradient(#2563eb ${menuPercent}%, #e2e8f0 0)` }}
+                    >
+                      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center">
+                        <p className="text-xs font-semibold text-slate-500">Total porsi</p>
+                        <p className="mt-1 text-sm font-extrabold text-blue-700">{totalMenuSold}</p>
+                        <p className="text-[10px] text-slate-500">{menuPercent.toFixed(1)}% target</p>
                       </div>
                     </div>
                     <div className="w-full min-w-0 space-y-2 sm:max-w-[210px]">
                       <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
                         Keterangan setiap menu
                       </p>
-                      {menus.length > 0 ? menus.map((menu, index) => {
+                      {menuTodayCounts.length > 0 ? menuTodayCounts.map((menu, index) => {
                         const menuColors = [
                           '#2563EB', '#16A34A', '#D97706', '#9333EA',
                           '#E11D48', '#0891B2', '#65A30D', '#C026D3',
@@ -1547,7 +2192,7 @@ export default function AdminView() {
                             <span className="min-w-0 flex-1 break-words font-medium text-slate-700">
                               {menu.name}
                             </span>
-                            <span className="shrink-0 text-slate-400">Menunggu data</span>
+                            <span className="shrink-0 text-slate-500">{menu.soldQuantity}/100 ({Math.min(100, menu.soldQuantity).toFixed(0)}%)</span>
                           </div>
                         );
                       }) : (
@@ -1569,10 +2214,14 @@ export default function AdminView() {
                     Perbandingan seluruh pesanan hari ini
                   </p>
                   <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:justify-center">
-                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
-                      <div className="text-center">
-                        <p className="text-xs font-semibold text-slate-500">Pembayaran</p>
-                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                    <div
+                      className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[18px]"
+                      style={{ background: `conic-gradient(#16a34a ${paidPercent}%, #dc2626 0)` }}
+                    >
+                      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center">
+                        <p className="text-xs font-semibold text-slate-500">Total pesanan</p>
+                        <p className="mt-1 text-lg font-extrabold text-slate-800">{paymentTotal}</p>
+                        <p className="text-[10px] text-slate-500">Transaksi hari ini</p>
                       </div>
                     </div>
                     <div className="w-full min-w-0 space-y-3 sm:max-w-[190px]">
@@ -1580,14 +2229,14 @@ export default function AdminView() {
                         <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-green-600" />
                         <div>
                           <p className="font-semibold text-slate-800">LUNAS</p>
-                          <p className="text-xs text-slate-500">Jumlah transaksi dan persentase</p>
+                          <p className="text-xs text-slate-500">{todayPaidCount} transaksi ({paidPercent.toFixed(1)}%)</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2 text-sm">
                         <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-red-600" />
                         <div>
                           <p className="font-semibold text-slate-800">BELUM LUNAS</p>
-                          <p className="text-xs text-slate-500">Jumlah transaksi dan persentase</p>
+                          <p className="text-xs text-slate-500">{todayUnpaidCount} transaksi ({(100 - paidPercent).toFixed(1)}%)</p>
                         </div>
                       </div>
                     </div>
@@ -1603,10 +2252,14 @@ export default function AdminView() {
                     Target 100 pesanan yang masuk setiap hari
                   </p>
                   <div className="flex flex-col items-center gap-4 py-5 sm:flex-row sm:justify-center">
-                    <div className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full border-[18px] border-slate-200">
-                      <div className="text-center">
+                    <div
+                      className="flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[18px]"
+                      style={{ background: `conic-gradient(#f59e0b ${orderPercent}%, #e2e8f0 0)` }}
+                    >
+                      <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-white text-center">
                         <p className="text-xs font-semibold text-slate-500">Pesanan hari ini</p>
-                        <p className="mt-1 text-xs font-bold text-slate-400">Menunggu data</p>
+                        <p className="mt-1 text-lg font-extrabold text-amber-700">{todayOrderCount}</p>
+                        <p className="text-[10px] text-slate-500">{orderPercent.toFixed(1)}% target</p>
                       </div>
                     </div>
                     <div className="w-full min-w-0 space-y-3 sm:max-w-[190px]">
@@ -1614,14 +2267,14 @@ export default function AdminView() {
                         <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-amber-500" />
                         <div>
                           <p className="font-semibold text-slate-800">Pesanan masuk</p>
-                          <p className="text-xs text-slate-500">Jumlah dan persentase target tercapai</p>
+                          <p className="text-xs text-slate-500">{todayOrderCount} pesanan ({orderPercent.toFixed(1)}%)</p>
                         </div>
                       </div>
                       <div className="flex items-start gap-2 text-sm">
                         <span className="mt-1 h-3 w-3 shrink-0 rounded-sm bg-slate-200" />
                         <div>
                           <p className="font-semibold text-slate-800">Sisa target</p>
-                          <p className="text-xs text-slate-500">Bagian dari target 100 pesanan</p>
+                          <p className="text-xs text-slate-500">{Math.max(0, 100 - todayOrderCount)} pesanan</p>
                         </div>
                       </div>
                     </div>
@@ -1933,17 +2586,19 @@ export default function AdminView() {
                       <div className="grid grid-cols-1 gap-3 border-t border-slate-100 bg-slate-50/70 p-4 sm:grid-cols-2 sm:p-5">
                         <button
                           type="button"
-                          disabled
-                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800 opacity-80"
+                          disabled={processingArchiveOrderId === order.id}
+                          onClick={() => archiveOrder(order)}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          Pindahkan ke Arsip
+                          {processingArchiveOrderId === order.id ? 'Memindahkan...' : 'Pindahkan ke Arsip'}
                         </button>
                         <button
                           type="button"
-                          disabled
-                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 opacity-80"
+                          disabled={processingTrashOrderId === order.id || processingArchiveOrderId === order.id}
+                          onClick={() => trashOrder(order)}
+                          className="flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
                         >
-                          Pindahkan ke Sampah
+                          {processingTrashOrderId === order.id ? 'Memindahkan...' : 'Pindahkan ke Sampah'}
                         </button>
                       </div>
 </article>
@@ -1961,8 +2616,7 @@ export default function AdminView() {
                     Arsip Pesanan
                   </h2>
                   <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                    Riwayat pesanan lama yang telah dipindahkan ke arsip,
-                    dikelompokkan berdasarkan tahun dan bulan.
+                    Riwayat pesanan yang dipindahkan ke arsip, dikelompokkan berdasarkan tahun dan bulan transaksi.
                   </p>
                 </div>
 
@@ -1970,157 +2624,12 @@ export default function AdminView() {
                   <h3 className="mb-3 text-base font-extrabold text-green-900">
                     Cari Arsip Pesanan
                   </h3>
-
-                  <div className="relative">
-                    <input
-                      type="text"
-                      disabled
-                      placeholder="Cari nama pelanggan atau nomor pesanan..."
-                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400"
-                    />
-                  </div>
-
-                  <div className="mt-4">
-                    <h4 className="mb-2 text-sm font-bold text-slate-700">
-                      Filter Tanggal Pesanan
-                    </h4>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <label className="block text-sm font-medium text-slate-600">
-                        Dari tanggal
-                        <input
-                          type="date"
-                          disabled
-                          className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
-                        />
-                      </label>
-                      <label className="block text-sm font-medium text-slate-600">
-                        Sampai tanggal
-                        <input
-                          type="date"
-                          disabled
-                          className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <h3 className="text-base font-extrabold text-green-900">
-                    Kelompok Arsip
-                  </h3>
-                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-800">
-                    Per Tahun / Per Bulan
-                  </span>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="overflow-hidden rounded-2xl border border-green-200 bg-white shadow-sm">
-                    <div className="flex flex-wrap items-center justify-between gap-3 bg-green-50 p-4 sm:p-5">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-800 text-white">
-                          <span className="text-lg font-extrabold">T</span>
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="font-extrabold text-green-950">
-                            Kelompok Tahun
-                          </h4>
-                          <p className="text-xs text-green-800">
-                            Tahun terbaru ditampilkan lebih dahulu
-                          </p>
-                        </div>
-                      </div>
-                      <span className="rounded-full border border-green-200 bg-white px-3 py-1 text-xs font-bold text-green-800">
-                        Tingkat 1
-                      </span>
-                    </div>
-
-                    <div className="space-y-3 p-4 sm:p-5">
-                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-extrabold text-slate-800">
-                              Kelompok Bulan
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500">
-                              Setiap tahun berisi arsip berdasarkan bulan.
-                            </p>
-                          </div>
-                          <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
-                            Tingkat 2
-                          </span>
-                        </div>
-
-                        <div className="mt-3 space-y-2">
-                          <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white p-3">
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-800">
-                              <span className="text-sm font-bold">B</span>
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-bold text-slate-700">
-                                Daftar Bulan
-                              </p>
-                              <p className="text-xs text-slate-500">
-                                Bulan akan dikelompokkan di dalam tahun.
-                              </p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-400">
-                              Arsip
-                            </span>
-                          </div>
-
-                          <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4">
-                            <div className="flex items-start gap-3">
-                              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                                <span className="text-sm font-bold">P</span>
-                              </div>
-                              <div>
-                                <p className="text-sm font-semibold text-slate-700">
-                                  Daftar Pesanan per Bulan
-                                </p>
-                                <p className="mt-1 text-xs leading-relaxed text-slate-500">
-                                  Nomor pesanan, nama pelanggan, tanggal,
-                                  nomor meja, total pembayaran, dan tombol
-                                  Lihat Detail akan ditampilkan di sini.
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </section>
-            )}
-            {/* SAMPAH */}
-            {activeSection === 'sampah-admin' && (
-              <section id="sampah-admin" className={sectionClass}>
-                <div className="mb-5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-xl font-extrabold text-green-900">
-                      Sampah
-                    </h2>
-                    <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-800">
-                      Pesanan di Sampah
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-600">
-                    Kelola pesanan yang telah dipindahkan ke Sampah.
-                    Pesanan dapat dipulihkan atau dihapus secara permanen.
-                  </p>
-                </div>
-
-                <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-                  <h3 className="mb-3 text-base font-extrabold text-green-900">
-                    Cari Pesanan di Sampah
-                  </h3>
-
                   <input
                     type="text"
-                    disabled
-                    placeholder="Cari nama pelanggan atau nomor pesanan..."
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400"
+                    value={archiveSearch}
+                    onChange={(event) => setArchiveSearch(event.target.value)}
+                    placeholder="Cari nama pelanggan, nomor pesanan, atau meja..."
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition-colors focus:border-green-600 focus:ring-2 focus:ring-green-100"
                   />
 
                   <div className="mt-4">
@@ -2132,7 +2641,221 @@ export default function AdminView() {
                         Dari tanggal
                         <input
                           type="date"
-                          disabled
+                          value={archiveDateFrom}
+                          max={archiveDateTo || undefined}
+                          onChange={(event) => setArchiveDateFrom(event.target.value)}
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+                        />
+                      </label>
+                      <label className="block text-sm font-medium text-slate-600">
+                        Sampai tanggal
+                        <input
+                          type="date"
+                          value={archiveDateTo}
+                          min={archiveDateFrom || undefined}
+                          onChange={(event) => setArchiveDateTo(event.target.value)}
+                          className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm"
+                        />
+                      </label>
+                    </div>
+                    {(archiveSearch || archiveDateFrom || archiveDateTo) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setArchiveSearch('');
+                          setArchiveDateFrom('');
+                          setArchiveDateTo('');
+                        }}
+                        className="mt-3 text-sm font-bold text-green-800 underline"
+                      >
+                        Reset pencarian dan filter
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-base font-extrabold text-green-900">
+                    Kelompok Arsip
+                  </h3>
+                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-bold text-green-800">
+                    {archivedOrders.length} Pesanan
+                  </span>
+                </div>
+
+                {archivedOrders.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-7 text-center">
+                    <p className="font-bold text-slate-700">
+                      Belum ada pesanan di Arsip
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                      Pesanan yang dipindahkan dari Manajemen Pesanan akan muncul di sini.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {Object.entries(archivedOrdersByYear)
+                      .sort(([yearA], [yearB]) => Number(yearB) - Number(yearA))
+                      .map(([year, months]) => (
+                        <div key={year} className="overflow-hidden rounded-2xl border border-green-200 bg-white shadow-sm">
+                          <div className="flex items-center justify-between gap-3 bg-green-50 p-4 sm:p-5">
+                            <div>
+                              <h4 className="font-extrabold text-green-950">
+                                Tahun {year}
+                              </h4>
+                              <p className="mt-1 text-xs text-green-800">
+                                {Object.values(months).reduce((total, list) => total + list.length, 0)} pesanan
+                              </p>
+                            </div>
+                            <span className="rounded-full border border-green-200 bg-white px-3 py-1 text-xs font-bold text-green-800">
+                              Tingkat 1
+                            </span>
+                          </div>
+
+                          <div className="space-y-3 p-4 sm:p-5">
+                            {Object.entries(months)
+                              .sort(([monthA], [monthB]) => Number(monthB) - Number(monthA))
+                              .map(([month, monthOrders]) => (
+                                <div key={`${year}-${month}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+                                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                    <h5 className="font-extrabold text-slate-800">
+                                      {new Intl.DateTimeFormat('id-ID', { month: 'long' }).format(new Date(Number(year), Number(month) - 1, 1))}
+                                    </h5>
+                                    <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+                                      {monthOrders.length} Pesanan
+                                    </span>
+                                  </div>
+
+                                  <div className="space-y-3">
+                                    {monthOrders
+                                      .sort((a, b) => b.created_at.getTime() - a.created_at.getTime())
+                                      .map((order) => (
+                                        <article key={order.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                          <div className="p-4">
+                                            <div className="flex flex-wrap items-start justify-between gap-3">
+                                              <div className="min-w-0">
+                                                <p className="break-all text-sm font-extrabold text-green-900">
+                                                  {order.order_code || order.id}
+                                                </p>
+                                                <p className="mt-1 text-sm font-semibold text-slate-800">
+                                                  {order.customer_name}
+                                                </p>
+                                                <p className="mt-1 text-xs text-slate-500">
+                                                  {formatDate(order.created_at)} · Meja {String(order.table_number).padStart(2, '0')}
+                                                </p>
+                                              </div>
+                                              <div className="text-right">
+                                                <p className="text-xs text-slate-500">Total transaksi</p>
+                                                <p className="mt-1 text-sm font-extrabold text-green-900">
+                                                  {rupiah(order.total_amount)}
+                                                </p>
+                                                <span className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${order.payment_status === 'lunas' ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
+                                                  {order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => setExpandedArchiveOrderId(
+                                                expandedArchiveOrderId === order.id ? '' : order.id
+                                              )}
+                                              className="mt-4 w-full rounded-xl border border-green-200 bg-green-50 px-4 py-2.5 text-sm font-bold text-green-800 hover:bg-green-100"
+                                            >
+                                              {expandedArchiveOrderId === order.id ? 'Tutup Detail' : 'Lihat Detail'}
+                                            </button>
+                                          </div>
+
+                                          {expandedArchiveOrderId === order.id && (
+                                            <div className="border-t border-slate-100 bg-slate-50 p-4">
+                                              <h6 className="mb-3 text-sm font-extrabold text-slate-800">
+                                                Rincian Pesanan
+                                              </h6>
+                                              {order.items.length === 0 ? (
+                                                <p className="text-sm text-slate-500">
+                                                  Rincian item tidak tersedia.
+                                                </p>
+                                              ) : (
+                                                <div className="space-y-2">
+                                                  {order.items.map((item) => (
+                                                    <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg bg-white p-3">
+                                                      <div className="min-w-0">
+                                                        <p className="text-sm font-semibold text-slate-800">
+                                                          {item.item_name}
+                                                        </p>
+                                                        <p className="mt-1 text-xs text-slate-500">
+                                                          {item.quantity} × {rupiah(item.item_price)}
+                                                        </p>
+                                                      </div>
+                                                      <p className="shrink-0 text-sm font-bold text-slate-800">
+                                                        {rupiah(item.subtotal)}
+                                                      </p>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                              )}
+                                              <div className="mt-3 flex justify-between border-t border-slate-200 pt-3 text-sm">
+                                                <span className="font-bold text-slate-600">Total</span>
+                                                <span className="font-extrabold text-green-900">
+                                                  {rupiah(order.total_amount)}
+                                                </span>
+                                              </div>
+                                              <p className="mt-2 text-xs text-slate-500">
+                                                Status pesanan: {statusLabel(order.status)}
+                                                {order.payment_method ? ` · Metode: ${order.payment_method === 'non_tunai' ? 'Non-Tunai' : 'Tunai'}` : ''}
+                                              </p>
+                                            </div>
+                                          )}
+                                        </article>
+                                      ))}
+                                  </div>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {/* SAMPAH */}
+            {activeSection === 'sampah-admin' && (
+              <section id="sampah-admin" className={sectionClass}>
+                <div className="mb-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-xl font-extrabold text-green-900">Sampah</h2>
+                    <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-bold text-red-800">
+                      {trashedOrders.length} Pesanan di Sampah
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-600">
+                    Kelola pesanan yang telah dipindahkan ke Sampah. Pesanan dapat dipulihkan atau dihapus secara permanen.
+                  </p>
+                </div>
+
+                <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                  <h3 className="mb-3 text-base font-extrabold text-green-900">
+                    Cari Pesanan di Sampah
+                  </h3>
+                  <input
+                    type="text"
+                    value={trashSearch}
+                    onChange={(e) => setTrashSearch(e.target.value)}
+                    placeholder="Cari nama pelanggan, nomor pesanan, atau nomor meja..."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 placeholder:text-slate-400"
+                  />
+                  <div className="mt-4">
+                    <h4 className="mb-2 text-sm font-bold text-slate-700">
+                      Filter Tanggal Pesanan
+                    </h4>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <label className="block text-sm font-medium text-slate-600">
+                        Dari tanggal
+                        <input
+                          type="date"
+                          value={trashDateFrom}
+                          onChange={(e) => setTrashDateFrom(e.target.value)}
                           className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
                         />
                       </label>
@@ -2140,7 +2863,8 @@ export default function AdminView() {
                         Sampai tanggal
                         <input
                           type="date"
-                          disabled
+                          value={trashDateTo}
+                          onChange={(e) => setTrashDateTo(e.target.value)}
                           className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm"
                         />
                       </label>
@@ -2164,9 +2888,7 @@ export default function AdminView() {
                         <span className="text-lg font-extrabold">S</span>
                       </div>
                       <div>
-                        <h4 className="font-extrabold text-slate-800">
-                          Daftar Transaksi
-                        </h4>
+                        <h4 className="font-extrabold text-slate-800">Daftar Transaksi</h4>
                         <p className="text-xs text-slate-500">
                           Pesanan yang dipindahkan ke Sampah akan ditampilkan di sini.
                         </p>
@@ -2175,37 +2897,124 @@ export default function AdminView() {
                   </div>
 
                   <div className="p-4 sm:p-5">
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
-                      <p className="font-semibold text-slate-700">
-                        Belum ada tampilan daftar transaksi
-                      </p>
-                      <p className="mt-1 text-sm leading-relaxed text-slate-500">
-                        Informasi nomor pesanan, nama pelanggan, tanggal,
-                        nomor meja, dan total pembayaran akan ditampilkan
-                        pada setiap kartu transaksi.
-                      </p>
-                    </div>
+                    {trashedOrders.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center">
+                        <p className="font-semibold text-slate-700">
+                          {trashSearch || trashDateFrom || trashDateTo
+                            ? 'Pesanan tidak ditemukan'
+                            : 'Belum ada pesanan di Sampah'}
+                        </p>
+                        <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                          {trashSearch || trashDateFrom || trashDateTo
+                            ? 'Coba ubah kata pencarian atau rentang tanggal.'
+                            : 'Pesanan yang dipindahkan ke Sampah akan ditampilkan di sini.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {trashedOrders
+                          .slice()
+                          .sort((a, b) => b.created_at.getTime() - a.created_at.getTime())
+                          .map((order) => (
+                            <article key={order.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                              <div className="p-4">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="break-all text-sm font-extrabold text-red-800">
+                                      {order.order_code || order.id}
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-800">
+                                      {order.customer_name}
+                                    </p>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {formatDate(order.created_at)} · Meja {String(order.table_number).padStart(2, '0')}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs text-slate-500">Total transaksi</p>
+                                    <p className="mt-1 text-sm font-extrabold text-green-900">
+                                      {rupiah(order.total_amount)}
+                                    </p>
+                                    <span className={`mt-2 inline-block rounded-full px-2.5 py-1 text-xs font-bold ${order.payment_status === 'lunas' ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'}`}>
+                                      {order.payment_status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 border-t border-slate-100 pt-3">
+                                  <p className="mb-2 text-xs font-extrabold text-slate-600">
+                                    Rincian Pesanan
+                                  </p>
+                                  {order.items.length === 0 ? (
+                                    <p className="text-sm text-slate-500">Rincian item tidak tersedia.</p>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {order.items.map((item) => (
+                                        <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg bg-slate-50 p-3">
+                                          <div className="min-w-0">
+                                            <p className="text-sm font-semibold text-slate-800">{item.item_name}</p>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                              {item.quantity} × {rupiah(item.item_price)}
+                                            </p>
+                                          </div>
+                                          <p className="shrink-0 text-sm font-bold text-slate-800">
+                                            {rupiah(item.subtotal)}
+                                          </p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <p className="mt-3 text-xs text-slate-500">
+                                  Status pesanan: {statusLabel(order.status)}
+                                  {order.payment_method ? ` · Metode: ${order.payment_method === 'non_tunai' ? 'Non-Tunai' : 'Tunai'}` : ''}
+                                </p>
+                                <button
+                                  type="button"
+                                  disabled={processingRestoreOrderId !== '' || processingDeleteOrderId !== ''}
+                                  onClick={() => setSelectedTrashOrderId(
+                                    selectedTrashOrderId === order.id ? '' : order.id
+                                  )}
+                                  className={`mt-4 w-full rounded-xl border px-4 py-2.5 text-sm font-bold ${selectedTrashOrderId === order.id ? 'border-red-300 bg-red-50 text-red-800' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'} disabled:cursor-not-allowed disabled:opacity-60`}
+                                >
+                                  {selectedTrashOrderId === order.id ? 'Pesanan Dipilih · Batalkan Pilihan' : 'Pilih Pesanan'}
+                                </button>
+                              </div>
+                            </article>
+                          ))}
+                      </div>
+                    )}
 
                     <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <button
                         type="button"
-                        disabled
-                        className="flex w-full items-center justify-center rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800 opacity-80"
+                        disabled={!selectedTrashOrderId || processingRestoreOrderId !== ''}
+                        onClick={() => {
+                          const selectedOrder = trashedOrders.find(
+                            (order) => order.id === selectedTrashOrderId
+                          );
+                          if (selectedOrder) void restoreOrder(selectedOrder);
+                        }}
+                        className="flex w-full items-center justify-center rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm font-bold text-green-800 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Pulihkan
+                        {processingRestoreOrderId ? 'Memulihkan...' : 'Pulihkan'}
                       </button>
                       <button
                         type="button"
-                        disabled
-                        className="flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 opacity-80"
+                        disabled={!selectedTrashOrderId || processingRestoreOrderId !== '' || processingDeleteOrderId !== ''}
+                        onClick={() => {
+                          const selectedOrder = trashedOrders.find(
+                            (order) => order.id === selectedTrashOrderId
+                          );
+                          if (selectedOrder) void permanentlyDeleteOrder(selectedOrder);
+                        }}
+                        className="flex w-full items-center justify-center rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-800 hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        Hapus Permanen
+                        {processingDeleteOrderId ? 'Menghapus...' : 'Hapus Permanen'}
                       </button>
                     </div>
-
                     <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
-                      Penghapusan permanen nantinya memerlukan konfirmasi Admin
-                      sebelum transaksi benar-benar dihapus.
+                      Penghapusan permanen tidak dapat dibatalkan. Pastikan pesanan yang dipilih sudah benar sebelum mengonfirmasi.
                     </p>
                   </div>
                 </div>
@@ -2619,168 +3428,236 @@ export default function AdminView() {
 
             {/* LAPORAN */}
                         {activeSection === 'laporan-admin' && (
-<section id="laporan-admin" className={sectionClass}>
-              <h2 className="text-lg font-bold text-green-900">
-                Laporan Penjualan
-              </h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Perhitungan berdasarkan tanggal pesanan dan status pembayaran yang tercatat.
-              </p>
+  <section id="laporan-admin" className={sectionClass}>
+    <div className="mb-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-extrabold text-green-900">
+            Laporan Penjualan
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Ringkasan dan rekapitulasi transaksi WAROENG BPJS.
+          </p>
+        </div>
+        <div className="no-print flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-green-100 bg-green-50 px-3 py-1.5 text-xs font-bold text-green-800">
+            Laporan Admin
+          </span>
+          <button
+            type="button"
+            onClick={() => window.print()}
+            className="rounded-xl bg-green-700 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-green-800"
+          >
+            Cetak Laporan
+          </button>
+        </div>
+      </div>
+    </div>
 
-              <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="min-w-0">
-                  <label className="mb-1 block text-xs font-bold text-slate-600">
-                    Dari tanggal
-                  </label>
-                  <input
-                    type="date"
-                    value={reportStart}
-                    onChange={(event) => setReportStart(event.target.value)}
-                    className="w-full min-w-0 rounded-xl border border-slate-200 p-3 text-sm"
+    <div className="print-only-report mb-5">
+      <h1 className="text-xl font-extrabold">WAROENG BPJS</h1>
+      <h2 className="text-base font-bold">LAPORAN PENJUALAN</h2>
+      <p className="mt-1 text-sm">
+        Periode: {reportStart || 'Semua tanggal'} sampai {reportEnd || 'Terbaru'}
+      </p>
+    </div>
+
+    <div className="report-period-filter rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-4">
+        <h3 className="font-bold text-slate-900">Periode Laporan</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Tentukan tanggal untuk melihat laporan penjualan.
+        </p>
+      </div>
+
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="min-w-0">
+          <label className="mb-2 block text-xs font-bold text-slate-600">
+            Dari tanggal
+          </label>
+          <input
+            type="date"
+            value={reportStart}
+            onChange={(event) => setReportStart(event.target.value)}
+            className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100"
+          />
+        </div>
+
+        <div className="min-w-0">
+          <label className="mb-2 block text-xs font-bold text-slate-600">
+            Sampai tanggal
+          </label>
+          <input
+            type="date"
+            value={reportEnd}
+            min={reportStart || undefined}
+            onChange={(event) => setReportEnd(event.target.value)}
+            className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm outline-none transition focus:border-green-500 focus:bg-white focus:ring-2 focus:ring-green-100"
+          />
+        </div>
+      </div>
+
+      {reportStart && reportEnd && reportStart > reportEnd && (
+        <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-700">
+          Tanggal awal tidak boleh melewati tanggal akhir.
+        </p>
+      )}
+    </div>
+
+    <div className="mt-5">
+      <div className="mb-3">
+        <h3 className="font-bold text-slate-900">Ringkasan Penjualan</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Ikhtisar transaksi pada periode yang dipilih.
+        </p>
+      </div>
+
+      <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+        <article className="min-w-0 rounded-2xl border border-green-200 bg-green-50 p-4">
+          <p className="text-xs font-bold text-green-800">
+            OMZET PEMBAYARAN LUNAS
+          </p>
+          <p className="mt-2 break-words text-xl font-extrabold text-green-900">
+            {rupiah(paidRevenue)}
+          </p>
+          <p className="mt-1 text-xs text-green-700">
+            Total pembayaran yang sudah diterima
+          </p>
+        </article>
+
+        <article className="min-w-0 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-xs font-bold text-amber-800">
+            TOTAL BELUM LUNAS
+          </p>
+          <p className="mt-2 break-words text-xl font-extrabold text-amber-900">
+            {rupiah(unpaidTotal)}
+          </p>
+          <p className="mt-1 text-xs text-amber-700">
+            Nilai pesanan yang belum dibayar
+          </p>
+        </article>
+
+        <article className="min-w-0 rounded-2xl border border-blue-200 bg-blue-50 p-4">
+          <p className="text-xs font-bold text-blue-800">
+            JUMLAH PESANAN
+          </p>
+          <p className="mt-2 text-2xl font-extrabold text-blue-900">
+            {reportStart && reportEnd && reportStart > reportEnd
+              ? 0
+              : reportOrders.length}
+          </p>
+          <p className="mt-1 text-xs text-blue-700">
+            Total transaksi pada periode
+          </p>
+        </article>
+
+        <article className="min-w-0 rounded-2xl border border-purple-200 bg-purple-50 p-4">
+          <p className="text-xs font-bold text-purple-800">
+            PESANAN SELESAI
+          </p>
+          <p className="mt-2 text-2xl font-extrabold text-purple-900">
+            {reportStart && reportEnd && reportStart > reportEnd
+              ? 0
+              : completedOrders}
+          </p>
+          <p className="mt-1 text-xs text-purple-700">
+            Jumlah pesanan berstatus selesai
+          </p>
+        </article>
+      </div>
+    </div>
+
+    <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="mb-5">
+        <h3 className="font-bold text-slate-900">Grafik Omzet Harian</h3>
+        <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          Pergerakan omzet dari pembayaran lunas berdasarkan tanggal terpilih.
+        </p>
+      </div>
+
+      {reportStart && reportEnd && reportStart > reportEnd ? (
+        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          Pilih rentang tanggal yang valid untuk melihat grafik.
+        </p>
+      ) : dailyRevenueEntries.length === 0 ? (
+        <p className="rounded-xl bg-slate-50 p-5 text-center text-sm text-slate-500">
+          Belum ada transaksi lunas pada rentang tanggal ini.
+        </p>
+      ) : (
+        <div className="overflow-x-auto pb-3">
+          <div className="flex min-w-max items-end gap-3">
+            {dailyRevenueEntries.map(([date, amount]) => (
+              <div
+                key={date}
+                className="flex w-12 flex-col items-center gap-2"
+                title={`${date}: ${rupiah(amount)}`}
+              >
+                <div className="flex h-36 w-full items-end justify-center rounded-t-lg bg-slate-50">
+                  <div
+                    className="w-7 rounded-t-lg bg-green-600 transition-all"
+                    style={{
+                      height: `${Math.max(3, (amount / maxDailyRevenue) * 100)}%`
+                    }}
                   />
                 </div>
-
-                <div className="min-w-0">
-                  <label className="mb-1 block text-xs font-bold text-slate-600">
-                    Sampai tanggal
-                  </label>
-                  <input
-                    type="date"
-                    value={reportEnd}
-                    min={reportStart || undefined}
-                    onChange={(event) => setReportEnd(event.target.value)}
-                    className="w-full min-w-0 rounded-xl border border-slate-200 p-3 text-sm"
-                  />
-                </div>
+                <span className="text-xs font-semibold text-slate-600">
+                  {date.slice(8, 10)}/{date.slice(5, 7)}
+                </span>
               </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-              {reportStart && reportEnd && reportStart > reportEnd && (
-                <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                  Tanggal awal tidak boleh melewati tanggal akhir.
-                </p>
-              )}
+      <p className="mt-2 border-t border-slate-100 pt-3 text-xs text-slate-400">
+        Sentuh atau tahan batang grafik untuk melihat nilai omzet harian.
+      </p>
+    </div>
 
-              <div className="mt-4 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <article className="rounded-xl border border-green-100 bg-green-50 p-4">
-                  <p className="text-sm font-semibold text-green-800">
-                    Omzet Pembayaran Lunas
-                  </p>
-                  <p className="mt-2 break-words text-xl font-extrabold text-green-900">
-                    {rupiah(paidRevenue)}
-                  </p>
-                </article>
+    <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="border-b border-slate-100 bg-slate-50 p-4">
+        <h3 className="font-bold text-slate-900">Rincian Pembayaran</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Ringkasan status pembayaran transaksi.
+        </p>
+      </div>
 
-                <article className="rounded-xl border border-amber-100 bg-amber-50 p-4">
-                  <p className="text-sm font-semibold text-amber-800">
-                    Total Belum Lunas
-                  </p>
-                  <p className="mt-2 break-words text-xl font-extrabold text-amber-900">
-                    {rupiah(unpaidTotal)}
-                  </p>
-                </article>
+      <div className="divide-y divide-slate-100 px-4">
+        <div className="flex items-center justify-between gap-3 py-4">
+          <span className="text-sm text-slate-600">Pesanan lunas</span>
+          <strong className="rounded-lg bg-green-50 px-3 py-1.5 text-sm text-green-800">
+            {paidOrders.length}
+          </strong>
+        </div>
 
-                <article className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-                  <p className="text-sm font-semibold text-blue-800">
-                    Jumlah Pesanan
-                  </p>
-                  <p className="mt-2 text-2xl font-extrabold text-blue-900">
-                    {reportStart && reportEnd && reportStart > reportEnd
-                      ? 0
-                      : reportOrders.length}
-                  </p>
-                </article>
+        <div className="flex items-center justify-between gap-3 py-4">
+          <span className="text-sm text-slate-600">Pesanan belum lunas</span>
+          <strong className="rounded-lg bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+            {unpaidOrders.length}
+          </strong>
+        </div>
 
-                <article className="rounded-xl border border-purple-100 bg-purple-50 p-4">
-                  <p className="text-sm font-semibold text-purple-800">
-                    Pesanan Selesai
-                  </p>
-                  <p className="mt-2 text-2xl font-extrabold text-purple-900">
-                    {reportStart && reportEnd && reportStart > reportEnd
-                      ? 0
-                      : completedOrders}
-                  </p>
-                </article>
-              </div>
+        <div className="flex items-center justify-between gap-3 py-4">
+          <span className="text-sm text-slate-600">Pesanan dibatalkan</span>
+          <strong className="rounded-lg bg-red-50 px-3 py-1.5 text-sm text-red-800">
+            {reportOrders.filter((order) => order.status === 'dibatalkan').length}
+          </strong>
+        </div>
+      </div>
+    </div>
 
-              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white p-4">
-                <div className="mb-4">
-                  <h3 className="font-bold text-slate-800">Grafik Omzet Harian</h3>
-                  <p className="mt-1 text-xs text-slate-500">
-                    Omzet dari pembayaran lunas sesuai rentang tanggal terpilih.
-                  </p>
-                </div>
-
-                {reportStart && reportEnd && reportStart > reportEnd ? (
-                  <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-                    Pilih rentang tanggal yang valid untuk melihat grafik.
-                  </p>
-                ) : dailyRevenueEntries.length === 0 ? (
-                  <p className="rounded-lg bg-slate-50 p-4 text-center text-sm text-slate-500">
-                    Belum ada transaksi lunas pada rentang tanggal ini.
-                  </p>
-                ) : (
-                  <div className="overflow-x-auto pb-2">
-                    <div className="flex min-w-max items-end gap-3">
-                      {dailyRevenueEntries.map(([date, amount]) => (
-                        <div
-                          key={date}
-                          className="flex w-12 flex-col items-center gap-2"
-                          title={`${date}: ${rupiah(amount)}`}
-                        >
-                          <div className="flex h-36 w-full items-end justify-center rounded-t-md bg-slate-50">
-                            <div
-                              className="w-7 rounded-t-md bg-green-600 transition-all"
-                              style={{
-                                height: `${Math.max(3, (amount / maxDailyRevenue) * 100)}%`
-                              }}
-                            />
-                          </div>
-                          <span className="text-xs font-medium text-slate-600">
-                            {date.slice(8, 10)}/{date.slice(5, 7)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <p className="mt-2 text-xs text-slate-400">
-                  Sentuh atau tahan batang untuk melihat nilai omzet harian.
-                </p>
-              </div>
-
-              <div className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-                <div className="bg-slate-50 p-3">
-                  <h3 className="font-bold text-slate-800">
-                    Rincian Pembayaran
-                  </h3>
-                </div>
-                <div className="divide-y divide-slate-100 p-3 text-sm">
-                  <div className="flex justify-between gap-3 py-2">
-                    <span className="text-slate-600">Pesanan lunas</span>
-                    <strong>{paidOrders.length}</strong>
-                  </div>
-                  <div className="flex justify-between gap-3 py-2">
-                    <span className="text-slate-600">Pesanan belum lunas</span>
-                    <strong>{unpaidOrders.length}</strong>
-                  </div>
-                  <div className="flex justify-between gap-3 py-2">
-                    <span className="text-slate-600">Pesanan dibatalkan</span>
-                    <strong>
-                      {reportOrders.filter((order) => order.status === 'dibatalkan').length}
-                    </strong>
-                  </div>
-                </div>
-              </div>
-
-              <p className="mt-3 text-xs leading-relaxed text-slate-500">
-                Catatan: omzet dihitung dari pesanan berstatus lunas.
-                Pesanan yang belum lunas tidak dimasukkan ke omzet.
-              </p>
-            </section>
-            )}
+    <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4">
+      <p className="text-xs font-bold text-blue-900">Catatan Laporan</p>
+      <p className="mt-1 text-xs leading-relaxed text-blue-800">
+        Omzet dihitung dari pesanan berstatus lunas. Pesanan yang belum lunas
+        tidak dimasukkan ke omzet.
+      </p>
+    </div>
+  </section>
+)}
 
             {/* AKUN KASIR */}
-            {activeSection === 'akun-admin' && (
+{activeSection === 'akun-admin' && (
               <section id="akun-admin" className={sectionClass}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                   <div>
@@ -2846,6 +3723,12 @@ export default function AdminView() {
                     </p>
                   )}
 
+                  {cashierAccountsError && (
+                    <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                      {cashierAccountsError}
+                    </p>
+                  )}
+
                   {staffProfiles.length === 0 ? (
                     <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
                       Belum ada data akun yang dapat ditampilkan.
@@ -2855,6 +3738,9 @@ export default function AdminView() {
                       {staffProfiles.map((staff) => {
                         const role = staff.role.trim().toLowerCase();
                         const isCashier = role === 'kasir';
+                        const cashierAccount = isCashier
+                          ? cashierAccounts.find((account) => account.uid === staff.id)
+                          : undefined;
 
                         return (
                           <article
@@ -2870,6 +3756,18 @@ export default function AdminView() {
                                   ? `Terdaftar: ${formatDate(staff.created_at)}`
                                   : 'Tanggal pendaftaran tidak tersedia'}
                               </p>
+                              {isCashier && (
+                                <div className="mt-2 space-y-1 text-xs">
+                                  <p className="break-all text-slate-600">
+                                    Email: {cashierAccount?.email || (cashierAccountsLoading ? 'Memuat...' : 'Tidak tersedia')}
+                                  </p>
+                                  {cashierAccount && (
+                                    <p className={cashierAccount.disabled ? 'font-semibold text-red-600' : 'font-semibold text-green-600'}>
+                                      Status akun: {cashierAccount.disabled ? 'Nonaktif' : 'Aktif'}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                             </div>
                             <span className={`w-fit rounded-full px-3 py-1 text-xs font-bold ${
                               isCashier
@@ -2878,6 +3776,21 @@ export default function AdminView() {
                             }`}>
                               {staff.role || 'Role belum diatur'}
                             </span>
+                            {isCashier && cashierAccount && (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectCashier(cashierAccount)}
+                                className={`w-full rounded-lg px-3 py-2 text-xs font-bold sm:w-auto ${
+                                  selectedCashierId === cashierAccount.uid
+                                    ? 'bg-green-700 text-white'
+                                    : 'border border-green-700 text-green-800 hover:bg-green-50'
+                                }`}
+                              >
+                                {selectedCashierId === cashierAccount.uid
+                                  ? 'Akun Dipilih'
+                                  : 'Pilih untuk Dikelola'}
+                              </button>
+                            )}
                           </article>
                         );
                       })}
@@ -2889,57 +3802,228 @@ export default function AdminView() {
                 <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
                   <h3 className="font-bold text-slate-900">Tambah Akun Kasir</h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    Rancangan form pendaftaran akun. Penyimpanan belum diaktifkan.
+                    Buat akun kasir baru untuk mengakses halaman Kasir.
                   </p>
 
                   <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="block text-xs font-semibold text-slate-600">
                       Nama lengkap
-                      <input disabled placeholder="Masukkan nama kasir"
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" />
+                      <input
+                        value={cashierName}
+                        onChange={(event) => setCashierName(event.target.value)}
+                        placeholder="Masukkan nama kasir"
+                        autoComplete="off"
+                        required
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"
+                      />
                     </label>
 
                     <label className="block text-xs font-semibold text-slate-600">
                       Email akun
-                      <input disabled type="email" placeholder="nama@email.com"
-                        className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" />
+                      <input
+                        value={cashierEmail}
+                        onChange={(event) => setCashierEmail(event.target.value)}
+                        type="email"
+                        placeholder="nama@email.com"
+                        autoComplete="off"
+                        required
+                        className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"
+                      />
                     </label>
 
                     <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
                       Kata sandi awal
                       <div className="mt-1 flex gap-2">
-                        <input disabled type="password" placeholder="Buat kata sandi awal"
-                          className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm" />
-                        <button type="button" disabled
-                          className="rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-400">
-                          Tampilkan Sandi
+                        <input
+                          value={cashierPassword}
+                          onChange={(event) => setCashierPassword(event.target.value)}
+                          type={showCashierPassword ? 'text' : 'password'}
+                          placeholder="Buat kata sandi awal (minimal 8 karakter)"
+                          autoComplete="new-password"
+                          required
+                          className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white p-3 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCashierPassword((value) => !value)}
+                          className="rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700"
+                        >
+                          {showCashierPassword ? 'Sembunyikan Sandi' : 'Tampilkan Sandi'}
                         </button>
                       </div>
                     </label>
                   </div>
 
-                  <button type="button" disabled
-                    className="mt-4 w-full rounded-xl bg-green-700 px-4 py-3 text-sm font-bold text-white opacity-50 sm:w-auto">
-                    Tambahkan Akun Kasir
+                  {cashierCreateError && (
+                    <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                      {cashierCreateError}
+                    </p>
+                  )}
+
+                  {cashierCreateMessage && (
+                    <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+                      {cashierCreateMessage}
+                    </p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={handleCreateCashier}
+                    disabled={creatingCashier}
+                    className="mt-4 w-full rounded-xl bg-green-700 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+                  >
+                    {creatingCashier ? 'Menyimpan...' : 'Tambahkan Akun Kasir'}
                   </button>
                 </div>
 
                 {/* PENGELOLAAN AKUN */}
                 <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-4">
-                  <h3 className="font-bold text-slate-900">Pengelolaan Akun</h3>
+                  <h3 className="font-bold text-slate-900">Pengelolaan Akun Kasir</h3>
                   <p className="mt-1 text-xs text-slate-500">
-                    Pengaturan akun akan tersedia setelah fungsi pengelolaan diaktifkan melalui backend tepercaya.
+                    Pilih akun kasir dari daftar untuk mengubah data atau statusnya. Akun Admin tidak dapat dikelola dari bagian ini.
                   </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button type="button" disabled
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-400">
-                      Kelola Akun
-                    </button>
-                    <button type="button" disabled
-                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-400">
-                      Nonaktifkan Akun
-                    </button>
-                  </div>
+
+                  {cashierAccountsLoading && (
+                    <p className="mt-3 text-sm text-slate-500">Memuat akun kasir...</p>
+                  )}
+
+                  {!cashierAccountsLoading && cashierAccounts.length === 0 && (
+                    <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                      Belum ada akun kasir yang dapat dikelola. Pastikan daftar akun berhasil dimuat.
+                    </p>
+                  )}
+
+                  {selectedCashierId && (() => {
+                    const selectedAccount = cashierAccounts.find(
+                      (item) => item.uid === selectedCashierId
+                    );
+                    const selectedProfile = staffProfiles.find(
+                      (item) => item.id === selectedCashierId
+                    );
+
+                    if (
+                      !selectedAccount ||
+                      !selectedProfile ||
+                      selectedProfile.role.trim().toLowerCase() !== 'kasir'
+                    ) {
+                      return (
+                        <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
+                          Akun yang dipilih tidak tersedia atau bukan akun kasir.
+                        </p>
+                      );
+                    }
+
+                    return (
+                      <div className="mt-4 space-y-4">
+                        <div className="rounded-xl bg-green-50 p-3">
+                          <p className="text-xs font-semibold text-green-800">Akun yang dipilih</p>
+                          <p className="mt-1 font-bold text-green-950">{selectedAccount.full_name}</p>
+                          <p className="break-all text-xs text-green-800">{selectedAccount.email}</p>
+                          <p className={`mt-1 text-xs font-bold ${
+                            selectedAccount.disabled ? 'text-red-700' : 'text-green-700'
+                          }`}>
+                            Status: {selectedAccount.disabled ? 'Nonaktif' : 'Aktif'}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <label className="block text-xs font-semibold text-slate-600">
+                            Nama lengkap
+                            <input
+                              value={editingCashierName}
+                              onChange={(event) => setEditingCashierName(event.target.value)}
+                              maxLength={80}
+                              className="mt-1 w-full rounded-xl border border-slate-200 p-3 text-sm"
+                            />
+                          </label>
+
+                          <label className="block text-xs font-semibold text-slate-600">
+                            Email akun
+                            <input
+                              type="email"
+                              value={editingCashierEmail}
+                              onChange={(event) => setEditingCashierEmail(event.target.value)}
+                              className="mt-1 w-full rounded-xl border border-slate-200 p-3 text-sm"
+                            />
+                          </label>
+
+                          <label className="block text-xs font-semibold text-slate-600 sm:col-span-2">
+                            Kata sandi baru
+                            <div className="mt-1 flex gap-2">
+                              <input
+                                type={showEditingCashierPassword ? 'text' : 'password'}
+                                value={editingCashierPassword}
+                                onChange={(event) => setEditingCashierPassword(event.target.value)}
+                                placeholder="Kosongkan jika tidak ingin mengganti"
+                                autoComplete="new-password"
+                                className="min-w-0 flex-1 rounded-xl border border-slate-200 p-3 text-sm"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowEditingCashierPassword((value) => !value)}
+                                className="rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-700"
+                              >
+                                {showEditingCashierPassword ? 'Sembunyikan' : 'Tampilkan'}
+                              </button>
+                            </div>
+                          </label>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={handleUpdateCashier}
+                            disabled={savingCashierEdit}
+                            className="rounded-xl bg-green-700 px-4 py-3 text-xs font-bold text-white disabled:opacity-50"
+                          >
+                            {savingCashierEdit ? 'Menyimpan...' : 'Simpan Perubahan'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleToggleCashierStatus(selectedAccount)}
+                            disabled={processingCashierStatusId === selectedAccount.uid}
+                            className={`rounded-xl px-4 py-3 text-xs font-bold text-white disabled:opacity-50 ${
+                              selectedAccount.disabled ? 'bg-green-700' : 'bg-red-600'
+                            }`}
+                          >
+                            {processingCashierStatusId === selectedAccount.uid
+                              ? 'Memproses...'
+                              : selectedAccount.disabled
+                                ? 'Aktifkan Kembali'
+                                : 'Nonaktifkan Akun'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCashierId('');
+                              setEditingCashierName('');
+                              setEditingCashierEmail('');
+                              setEditingCashierPassword('');
+                              setCashierManagementMessage('');
+                              setCashierManagementError('');
+                            }}
+                            className="rounded-xl border border-slate-200 px-4 py-3 text-xs font-bold text-slate-600"
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {cashierManagementError && (
+                    <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+                      {cashierManagementError}
+                    </p>
+                  )}
+
+                  {cashierManagementMessage && (
+                    <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm text-green-700">
+                      {cashierManagementMessage}
+                    </p>
+                  )}
                 </div>
               </section>
             )}

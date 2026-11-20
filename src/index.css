@@ -34,3 +34,178 @@ opacity: 0.6;
 #root {
 min-height: 100vh;
 }
+
+
+/* PRINT LAPORAN ADMIN */
+.print-only-report {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+
+  html,
+  body,
+  #root {
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  #laporan-admin,
+  #laporan-admin * {
+    visibility: visible !important;
+  }
+
+  #laporan-admin {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr) !important;
+    gap: 7px !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #111 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    zoom: 0.82;
+  }
+
+  #laporan-admin > :nth-child(1),
+  #laporan-admin > .print-only-report,
+  #laporan-admin > :nth-child(4),
+  #laporan-admin > :nth-child(7) {
+    grid-column: 1 / -1 !important;
+  }
+
+  #laporan-admin > :nth-child(1) {
+    margin: 0 !important;
+  }
+
+  #laporan-admin > .print-only-report {
+    display: block !important;
+    margin: 0 0 4px !important;
+    padding: 0 0 7px !important;
+    color: #111 !important;
+    border-bottom: 1px solid #999;
+  }
+
+  #laporan-admin .no-print,
+  #laporan-admin .report-period-filter {
+    display: none !important;
+  }
+
+  #laporan-admin > :nth-child(4),
+  #laporan-admin > :nth-child(5),
+  #laporan-admin > :nth-child(6),
+  #laporan-admin > :nth-child(7) {
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 9px !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 8px !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    break-inside: avoid !important;
+  }
+
+  #laporan-admin > :nth-child(4) > div:last-child {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  #laporan-admin article {
+    min-width: 0 !important;
+    padding: 9px !important;
+    border-radius: 7px !important;
+    break-inside: avoid !important;
+  }
+
+  #laporan-admin article p {
+    margin-top: 3px !important;
+    font-size: 9px !important;
+    line-height: 1.25 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #laporan-admin article p.text-xl,
+  #laporan-admin article p.text-2xl {
+    font-size: 15px !important;
+    font-weight: 800 !important;
+  }
+
+  #laporan-admin > :nth-child(5) h3,
+  #laporan-admin > :nth-child(6) h3,
+  #laporan-admin > :nth-child(7) p {
+    font-size: 11px !important;
+  }
+
+  #laporan-admin > :nth-child(5) > div:first-child,
+  #laporan-admin > :nth-child(6) > div:first-child {
+    margin-bottom: 6px !important;
+  }
+
+  #laporan-admin .overflow-hidden,
+  #laporan-admin .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  #laporan-admin .flex.min-w-max {
+    display: flex !important;
+    min-width: 0 !important;
+    flex-wrap: wrap !important;
+    align-items: flex-end !important;
+    justify-content: flex-start !important;
+    gap: 5px !important;
+    padding-bottom: 0 !important;
+  }
+
+  #laporan-admin .flex.min-w-max > div {
+    width: 6mm !important;
+    gap: 2px !important;
+  }
+
+  #laporan-admin .flex.min-w-max > div > div {
+    height: 19mm !important;
+  }
+
+  #laporan-admin .flex.min-w-max > div > div > div {
+    width: 4mm !important;
+  }
+
+  #laporan-admin .flex.min-w-max span {
+    font-size: 8px !important;
+  }
+
+  #laporan-admin > :nth-child(5) p,
+  #laporan-admin > :nth-child(6) p,
+  #laporan-admin > :nth-child(7) p {
+    line-height: 1.3 !important;
+  }
+
+  #laporan-admin > :nth-child(6) > div:last-child > div {
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
+  }
+
+  #laporan-admin > :nth-child(7) {
+    padding: 7px 9px !important;
+  }
+
+  #laporan-admin * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
